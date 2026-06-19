@@ -9,8 +9,9 @@
     landingDraft: '',
     draft: '',
     building: false,
-    model: 'opus',                       // default model (cheapest capable)
-    ledger: EZ.makeLedger(50, 39.50),    // $50 monthly budget, $39.50 already used (79%)
+    model: 'fable',                      // always default to the strongest model
+    currentGame: 'apex',                 // which game the live preview is running
+    ledger: EZ.makeLedger(50, 21.00),    // $50 monthly budget, $21 already used
     score: 0,
     best: 0,
     paused: false,
@@ -268,16 +269,18 @@
       fbox.appendChild(b);
     });
 
+    // Each card opens a real game (game key). Two full 3D engines today
+    // (apex, hideout); hue gives every tile its own colour.
     var games = [
-      { name: 'NEON SNAKE', file: 'snake.ez', author: '@maya', plays: '12.4k', tag: 'ARCADE', genre: 'snake' },
-      { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER', genre: 'runner' },
-      { name: 'PIXEL DRIFT', file: 'drift.ez', author: '@lin', plays: '7.8k', tag: 'RACING', genre: 'racing' },
-      { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER', genre: 'shooter' },
-      { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE', genre: 'blocks' },
-      { name: 'LASER GRID', file: 'lasergrid.ez', author: '@sasha', plays: '4.9k', tag: 'ARCADE', genre: 'grid' },
-      { name: 'CYBER PONG', file: 'pong.ez', author: '@yui', plays: '4.1k', tag: 'CLASSIC', genre: 'pong' },
-      { name: 'MAZE NINE', file: 'maze9.ez', author: '@beck', plays: '3.7k', tag: 'MAZE', genre: 'maze' },
-      { name: 'BIT BLASTER', file: 'blaster.ez', author: '@ravi', plays: '3.0k', tag: 'SHOOTER', genre: 'shooter' }
+      { name: 'APEX DRIFT', file: 'apexdrift.ez', author: '@you', plays: '18.2k', tag: '3D · RACER', genre: 'racing', game: 'apex', hue: 0 },
+      { name: 'BLOCK HIDEOUT', file: 'hideout.ez', author: '@you', plays: '14.7k', tag: '3D · HIDE & SEEK', genre: 'maze', game: 'hideout', hue: 110 },
+      { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER', genre: 'runner', game: 'apex', hue: 205 },
+      { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER', genre: 'shooter', game: 'hideout', hue: 40 },
+      { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE', genre: 'blocks', game: 'hideout', hue: 268 },
+      { name: 'LASER GRID', file: 'lasergrid.ez', author: '@sasha', plays: '4.9k', tag: 'ARCADE', genre: 'grid', game: 'apex', hue: 160 },
+      { name: 'CYBER PONG', file: 'pong.ez', author: '@yui', plays: '4.1k', tag: 'CLASSIC', genre: 'pong', game: 'hideout', hue: 310 },
+      { name: 'MAZE NINE', file: 'maze9.ez', author: '@beck', plays: '3.7k', tag: 'MAZE', genre: 'maze', game: 'hideout', hue: 85 },
+      { name: 'BIT BLASTER', file: 'blaster.ez', author: '@ravi', plays: '3.0k', tag: 'SHOOTER', genre: 'shooter', game: 'apex', hue: 22 }
     ];
     var grid = $('gallery-grid');
     thumbs = [];
@@ -299,10 +302,13 @@
             '<button class="remix">Remix</button>' +
           '</div>' +
         '</div>';
-      card.querySelector('.remix').addEventListener('click', function (e) { e.stopPropagation(); go('app'); });
-      card.addEventListener('click', function () { go('app'); });
+      var cv = card.querySelector('canvas');
+      if (g.hue) cv.style.filter = 'hue-rotate(' + g.hue + 'deg)';
+      var key = g.game;
+      card.querySelector('.remix').addEventListener('click', function (e) { e.stopPropagation(); openGame(key); });
+      card.addEventListener('click', function () { openGame(key); });
       grid.appendChild(card);
-      thumbs.push({ canvas: card.querySelector('canvas'), ctx: null, genre: g.genre, seed: (i + 1) * 2654435761 });
+      thumbs.push({ canvas: cv, ctx: null, genre: g.genre, seed: (i + 1) * 2654435761 });
     });
   }
 
@@ -327,25 +333,79 @@
     if (!thumbRaf) thumbRaf = requestAnimationFrame(drawThumbs);
   }
 
-  /* ---------- flagship game: Apex Drift (3D) ---------- */
-  var carCtl = null;
+  /* ---------- 3D games (registry: window.EZGames) ---------- */
+  var gameCtl = null;
+
+  // each game's metadata + download artifact
+  var GAME_META = {
+    apex:    { name: 'Apex Drift',   tag: 'NEON RACER', download: './dist/apex-drift.html' },
+    hideout: { name: 'Block Hideout', tag: 'HIDE & SEEK', download: null }
+  };
+
+  function applyGameMeta() {
+    var m = GAME_META[state.currentGame] || GAME_META.apex;
+    $('project-name').textContent = m.name;
+    $('game-name').textContent = m.name.toUpperCase();
+  }
 
   function tryInit() {
     var c = $('game-canvas');
-    if (!c || carCtl) return;
-    if (!window.EZCar) { setTimeout(tryInit, 80); return; }
+    if (!c || gameCtl) return;
+    var reg = window.EZGames && window.EZGames[state.currentGame];
+    if (!reg) { setTimeout(tryInit, 80); return; }
     var r = c.getBoundingClientRect();
     if (r.width < 20 || r.height < 20) { setTimeout(tryInit, 60); return; }
-    carCtl = window.EZCar.mount(c, {
+    state.score = 0; state.best = 0; updateScore();
+    gameCtl = reg.mount(c, {
       onScore: function (s) { state.score = s; updateScore(); },
       onBest: function (b) { state.best = b; updateScore(); }
     });
+    applyGameMeta();
   }
 
   function teardown() {
-    if (!carCtl) return;
-    carCtl.dispose();
-    carCtl = null;
+    if (!gameCtl) return;
+    gameCtl.dispose();
+    gameCtl = null;
+  }
+
+  // open a specific game in the live preview (from the gallery)
+  function openGame(key) {
+    if (!GAME_META[key]) key = 'apex';
+    teardown();
+    state.currentGame = key;
+    $('btn-pause').textContent = '❚❚';
+    go('app');
+  }
+
+  /* ---------- download / publish ---------- */
+  function toast(title, html) {
+    var t = document.createElement('div');
+    t.className = 'ez-toast';
+    t.innerHTML = '<span class="t-title">' + title + '</span><span>' + html + '</span>';
+    document.body.appendChild(t);
+    requestAnimationFrame(function () { t.classList.add('show'); });
+    setTimeout(function () { t.classList.remove('show'); setTimeout(function () { t.remove(); }, 300); }, 5200);
+  }
+
+  function downloadGame() {
+    var m = GAME_META[state.currentGame] || GAME_META.apex;
+    if (m.download) {
+      var a = document.createElement('a');
+      a.href = m.download;
+      a.download = state.currentGame + '.html';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('DOWNLOADED', m.name + ' exported as a standalone .html — double-click to play, host it anywhere.');
+    } else {
+      toast('PACKAGING', 'Building a standalone export of ' + m.name + '… (wired up for Apex Drift today).');
+    }
+  }
+
+  function publishGame() {
+    var m = GAME_META[state.currentGame] || GAME_META.apex;
+    var slug = m.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    var url = 'play.ez.app/' + slug;
+    toast('PUBLISHED ✦', m.name + ' is live at <a href="#" onclick="return false">' + url + '</a> — share the link, anyone can play instantly.');
   }
 
   /* ---------- wiring ---------- */
@@ -377,11 +437,13 @@
     $('btn-topup').addEventListener('click', topUp);
 
     $('btn-pause').addEventListener('click', function () {
-      if (carCtl) { var p = carCtl.togglePause(); state.paused = p; $('btn-pause').textContent = p ? '▶' : '❚❚'; }
+      if (gameCtl) { var p = gameCtl.togglePause(); state.paused = p; $('btn-pause').textContent = p ? '▶' : '❚❚'; }
     });
     $('btn-restart').addEventListener('click', function () {
-      if (carCtl) { carCtl.reset(); state.paused = false; $('btn-pause').textContent = '❚❚'; }
+      if (gameCtl) { gameCtl.reset(); state.paused = false; $('btn-pause').textContent = '❚❚'; }
     });
+    $('btn-download').addEventListener('click', downloadGame);
+    $('btn-publish').addEventListener('click', publishGame);
 
     buildModelSelector();
     buildChips();
