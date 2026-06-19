@@ -53,6 +53,24 @@ export class World {
     }
     return false;
   }
+  // fraction (0..1) along from->to before a TALL collider (wall) is hit; 1 = clear.
+  // Used to pull the camera in so it never clips through walls.
+  cameraHitFrac(from, to, minH) {
+    const d = this._tmp.copy(to).sub(from); const dist = d.length(); if (dist < 0.001) return 1; d.normalize();
+    let best = 1; minH = minH || 2.2; const pad = 0.35;
+    for (let i = 0; i < this.colliders.length; i++) {
+      const c = this.colliders[i]; if ((c.h || 1) < minH) continue;
+      const minx = c.x - c.hw - pad, maxx = c.x + c.hw + pad, minz = c.z - c.hd - pad, maxz = c.z + c.hd + pad;
+      let tmin = 0, tmax = dist, miss = false;
+      for (const ax of ['x', 'z']) {
+        const o = from[ax], dd = d[ax], mn = ax === 'x' ? minx : minz, mx = ax === 'x' ? maxx : maxz;
+        if (Math.abs(dd) < 1e-6) { if (o < mn || o > mx) { miss = true; break; } }
+        else { let t1 = (mn - o) / dd, t2 = (mx - o) / dd; if (t1 > t2) { const t = t1; t1 = t2; t2 = t; } tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2); }
+      }
+      if (!miss && tmin <= tmax && tmin > 0 && tmin < dist) best = Math.min(best, tmin / dist);
+    }
+    return best;
+  }
   // colour of the surface directly under / nearest to a position (for camo)
   surfaceColorAt(pos, out) {
     out = out || new THREE.Color();

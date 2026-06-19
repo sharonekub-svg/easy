@@ -21,17 +21,23 @@ folder with any static server.
 A near-commercial-quality WebGL hide & seek: morph your colour to match the
 scene and stay still to vanish from the hunter. Built as clean ES modules:
 
-- `game/engine.js` — renderer + post FX (SSAO, bloom, colour-grade, SMAA, ACES)
+- `game/engine.js` — renderer + post FX (SSAO, bloom, warm grade, film grain, SMAA, ACES)
+- `game/textures.js` — procedural PBR textures (wood, marble, tile, carpet, wallpaper, grass)
 - `game/input.js` — keyboard, mouse-orbit, gamepad and touch (virtual stick)
-- `game/audio.js` — fully synthesised music + SFX (no asset downloads)
-- `game/chameleon.js` — rounded avatar, smooth colour-morph, pose squash/stretch
-- `game/maps.js` — swappable maps (The Mansion, Sunset Garden)
-- `game/entities.js` — shared world physics/LOS + hunter & hider AI + manager
+- `game/audio.js` — fully synthesised music + reverb + SFX (no asset downloads)
+- `game/chameleon.js` — rounded avatar, smooth colour-morph, blink/tongue idles,
+  pose + jump squash/stretch, movement lean
+- `game/maps.js` — swappable maps; The Mansion (grand-hall landmark, themed rooms,
+  window light, flickering fireplace, swaying chandelier, dust motes) + Sunset Garden
+- `game/entities.js` — shared world physics/LOS/camera-collision + hunter & hider AI
 - `game/fx.js` — paint-splash, poof, dust, noise rings, camera shake
-- `game/ui.js` — menus, HUD, HSV colour wheel, mini-map, mobile controls
-- `game/game.js` — the MENU → HIDE → HUNT → RESULTS state machine
+- `game/ui.js` — menus, loading screen, HUD, HSV colour wheel, stamina, mini-map, mobile
+- `game/game.js` — MENU → HIDE → HUNT → RESULTS state machine, velocity-based
+  movement (accel/decel, sprint+stamina, slide, hop) and a collision-aware orbit camera
 
-Modes: Classic, Infection, Double. Runs at 60fps with adjustable quality.
+Controls: WASD move · Shift sprint · Space hop · C crouch (Shift+C slide) · X curl ·
+Z lie · E eyedrop · drag to look. Modes: Classic, Infection, Double. 60fps with
+adjustable quality (Low/Med/High).
 
 ## Screens
 

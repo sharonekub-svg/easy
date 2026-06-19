@@ -27,7 +27,10 @@ export class Game {
     this.best = parseFloat(localStorage.getItem('mc_best') || '0') || 0;
 
     this.state = 'menu';
-    this.yaw = 0; this.pitch = 0.62; this.camDist = 9.5;
+    this.yaw = 0; this.pitch = 0.55; this.camDist = 8.5; this.fov = 52; this.camera.fov = 52;
+    // movement physics state
+    this._vx = 0; this._vz = 0; this._vy = 0; this._onGround = true; this._slide = 0; this._slideDir = { x: 0, z: 0 };
+    this._stamina = 1; this._clock = 0; this._camPos = new THREE.Vector3(); this._camLook = new THREE.Vector3();
     this._tmp = new THREE.Vector3(); this._tmp2 = new THREE.Vector3();
     this._ref = new THREE.Color(); this._playerTarget = new THREE.Color(0x86c06a);
     this._ray = new THREE.Raycaster();
@@ -37,6 +40,7 @@ export class Game {
 
     this.ui = new UI(canvas.parentElement, {
       click: () => { this.audio.resume(); this.audio.uiClick(); },
+      hover: () => this.audio.uiHover(),
       start: (mode, map, tut) => this.startRound(mode, map, tut),
       pose: (p) => this.setPose(p),
       eyedrop: () => this.eyedrop(),
@@ -66,6 +70,14 @@ export class Game {
   startRound(mode, mapId, tutorial) {
     this.audio.resume();
     this._clearTimers();
+    // show the loading screen instantly, then build on the next frames so it paints
+    this.state = 'loading';
+    this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : 'THE MANSION…'));
+    clearTimeout(this._buildT);
+    this._buildT = setTimeout(() => this._doStartRound(mode, mapId, tutorial), 50);
+  }
+
+  _doStartRound(mode, mapId, tutorial) {
     this._teardownRound();
     this.mode = mode || 'classic'; this.mapId = mapId || 'mansion'; this.tutorial = !!tutorial;
 
@@ -83,8 +95,12 @@ export class Game {
 
     this.fx = new FX(this.scene, this.camera);
 
-    // camera behind player
-    this.yaw = 0; this.pitch = 0.62;
+    // reset movement physics
+    this._vx = this._vz = this._vy = 0; this._onGround = true; this._slide = 0; this._stamina = 1; this._clock = 0;
+
+    // camera behind the player, aligned to its spawn heading
+    this.yaw = 0; this.pitch = 0.55; this.fov = 52; this.camera.fov = 52; this.camera.updateProjectionMatrix();
+    this._focusPoint(this._camLook);
     this._snapCamera();
 
     this.coins = 0; this.survived = 0; this.over = false; this.won = false;
@@ -105,11 +121,11 @@ export class Game {
 
   _runTutorial() {
     const seq = [
-      [200, 'Move with WASD / arrow keys (or the on-screen stick)'],
-      [4000, 'Drag the view to look around · poses are bottom-centre'],
-      [8000, 'Press E to EYEDROP the colour right under your crosshair'],
-      [12000, 'Now match a nearby surface so your CAMO meter fills'],
-      [16000, 'STAY STILL to vanish — moving sends out a noise ring!']
+      [200, 'Move with WASD · hold SHIFT to sprint · SPACE to hop'],
+      [3800, 'Drag to look · sprint + C to slide into cover'],
+      [7600, 'Press E to EYEDROP the colour under your crosshair'],
+      [11400, 'Match a nearby surface so your CAMO meter fills'],
+      [15200, 'STAY STILL to vanish — movement sends out a noise ring!']
     ];
     seq.forEach((s) => this._tutTimers.push(setTimeout(() => this.ui.showHint(s[1], 3800), s[0])));
   }
@@ -159,10 +175,27 @@ export class Game {
     if (a === 'mute') { this._muted = !this._muted; this.audio.setMuted(this._muted); return; }
     if (this.state !== 'hide' && this.state !== 'hunt') return;
     if (a === 'eyedrop') this.eyedrop();
+    else if (a === 'jump') this.jump();
     else if (a === 'pose_stand') this.setPose('stand');
-    else if (a === 'pose_crouch') this.setPose('crouch');
+    else if (a === 'pose_crouch') this._crouchOrSlide();
     else if (a === 'pose_curl') this.setPose('curl');
     else if (a === 'pose_lie') this.setPose('lie');
+  }
+
+  jump() {
+    if (!this.player || !this._onGround) return;
+    this._onGround = false; this._vy = 7.2;
+    this.player.cham.hop(); this.audio.jump();
+    this.fx.noiseRing(this.player.pos, 0.7);
+  }
+  _crouchOrSlide() {
+    if (!this.player) return;
+    const speedNow = Math.hypot(this._vx, this._vz);
+    // sprinting + moving fast -> slide; otherwise crouch
+    if (this._onGround && speedNow > 6 && this._slide <= 0 && this.player.cham.pose === 'stand') {
+      this._slide = 0.55; const n = speedNow || 1; this._slideDir = { x: this._vx / n, z: this._vz / n };
+      this.setPose('crouch'); this.audio.slide(); this.fx.dust(this.player.pos); this.fx.noiseRing(this.player.pos, 0.9);
+    } else this.setPose(this.player.cham.pose === 'crouch' ? 'stand' : 'crouch');
   }
 
   setPose(p) {
@@ -195,14 +228,33 @@ export class Game {
   }
 
   /* ---------------- camera ---------------- */
-  _camTarget(out) {
+  // focus point: a bit above the player, nudged ahead in the travel direction
+  _focusPoint(out) {
     const p = this.player.pos;
-    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const ch = Math.cos(this.pitch);
-    out.set(p.x - fx * this.camDist * ch, p.y + 1.2 + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch);
+    out.set(p.x + this._vx * 0.12, p.y + 1.5, p.z + this._vz * 0.12);
     return out;
   }
-  _snapCamera() { if (!this.player) return; this._camTarget(this._tmp); this.camera.position.copy(this._tmp); this.camera.lookAt(this.player.pos.x, this.player.pos.y + 1.4, this.player.pos.z); }
+  // desired (unclamped) camera position behind/above the player
+  _camDesired(out) {
+    const p = this.player.pos;
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), ch = Math.cos(this.pitch);
+    out.set(p.x - fx * this.camDist * ch, p.y + 1.5 + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch);
+    return out;
+  }
+  // collision-resolved camera position (never clips through walls)
+  _camResolved(out) {
+    const focus = this._focusPoint(this._tmp2);
+    const desired = this._camDesired(out);
+    const frac = this.world ? this.world.cameraHitFrac(focus, desired, 2.2) : 1;
+    if (frac < 1) { out.lerpVectors(focus, desired, Math.max(0.25, frac * 0.92)); }
+    if (out.y < 0.6) out.y = 0.6; // never dip below the floor
+    return out;
+  }
+  _snapCamera() {
+    if (!this.player) return;
+    this._camResolved(this.camera.position);
+    this._focusPoint(this._camLook); this.camera.lookAt(this._camLook);
+  }
 
   /* ---------------- per-frame ---------------- */
   frame(now) {
@@ -229,29 +281,65 @@ export class Game {
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
     let wx = fx * (-inp.move.z) + rx * inp.move.x;
     let wz = fz * (-inp.move.z) + rz * inp.move.x;
-    const mag = Math.hypot(wx, wz);
+    const inMag = Math.min(1, Math.hypot(wx, wz));
     const pose = this.player.cham.pose;
-    let speed = this.input.run ? 8.5 : 6.2;
-    if (pose === 'crouch') speed *= 0.5; else if (pose === 'curl' || pose === 'lie') speed *= 0.0;
-    const moving = mag > 0.02 && speed > 0;
-    if (mag > 0.02 && (pose === 'curl' || pose === 'lie')) { this.setPose('stand'); }
-    if (moving) {
-      const p = this.player.pos;
-      p.x += (wx / mag) * speed * mag * dt; p.z += (wz / mag) * speed * mag * dt;
-      this.world.clampBounds(p, 0.6); this.world.collide(p, 0.6);
-      this.player.heading = Math.atan2(wx, wz);
-      // footsteps + dust + noise ring
-      this._stepT -= dt;
-      if (this._stepT <= 0) { this._stepT = this.input.run ? 0.28 : 0.4; this.audio.footstep(); this.fx.dust(p); }
+    const p = this.player.pos;
+
+    // sprint + stamina
+    const wantSprint = this.input.run && inMag > 0.1 && this._stamina > 0.05 && pose === 'stand' && this._slide <= 0;
+    this._stamina = Math.max(0, Math.min(1, this._stamina + (wantSprint ? -dt * 0.35 : dt * 0.22)));
+    let maxSpeed = wantSprint ? 9.6 : 6.0;
+    if (pose === 'crouch') maxSpeed = 3.2; else if (pose === 'curl' || pose === 'lie') maxSpeed = 0;
+    if (inMag > 0.05 && (pose === 'curl' || pose === 'lie')) { this.setPose('stand'); }
+
+    // desired horizontal velocity, reached with smooth accel / decel
+    let desX = 0, desZ = 0;
+    if (inMag > 0.02 && maxSpeed > 0) { const n = Math.hypot(wx, wz) || 1; desX = wx / n * maxSpeed * inMag; desZ = wz / n * maxSpeed * inMag; }
+    if (this._slide > 0) {
+      // slide: committed momentum, minimal steering, low profile
+      this._slide -= dt;
+      desX = this._slideDir.x * (this._slide * 18 + 2); desZ = this._slideDir.z * (this._slide * 18 + 2);
+      const accelS = Math.min(1, dt * 3);
+      this._vx += (desX - this._vx) * accelS; this._vz += (desZ - this._vz) * accelS;
+      if (this._slide <= 0 && pose === 'crouch') this.setPose('stand');
+    } else {
+      const accel = (inMag > 0.02 ? (this._onGround ? 13 : 4) : (this._onGround ? 11 : 3));
+      const k = Math.min(1, dt * accel);
+      this._vx += (desX - this._vx) * k; this._vz += (desZ - this._vz) * k;
     }
+    const speedNow = Math.hypot(this._vx, this._vz);
+    const moving = speedNow > 0.4;
+
+    // integrate horizontal
+    p.x += this._vx * dt; p.z += this._vz * dt;
+    this.world.clampBounds(p, 0.6); this.world.collide(p, 0.6);
+    if (moving) this.player.heading = Math.atan2(this._vx, this._vz);
+
+    // vertical (jump) integration
+    if (!this._onGround) {
+      this._vy -= 22 * dt; p.y += this._vy * dt;
+      if (p.y <= 0) { p.y = 0; this._onGround = true; this._vy = 0; this.player.cham.land(); this.audio.land(); this.fx.dust(p); this.fx.noiseRing(p, 0.8); }
+    } else p.y = (pose === 'curl' || pose === 'lie') ? p.y : 0;
     this.player.syncMesh();
+
+    // footsteps + dust + noise ring (scaled by real speed)
+    if (moving && this._onGround) {
+      this._stepT -= dt * (0.6 + speedNow / 9);
+      if (this._stepT <= 0) {
+        this._stepT = 0.42; this.world.surfaceColorAt(p, this._ref);
+        const luma = this._ref.r * 0.3 + this._ref.g * 0.6 + this._ref.b * 0.1;
+        this.audio.footstep(luma); this.fx.dust(p);
+      }
+    }
 
     // camo evaluation
     this.world.surfaceColorAt(this.player.pos, this._ref);
     const cd = this._colorDist(this.player.cham.getColor(), this._ref);
     let match = Math.max(0, 1 - cd / 0.5);
     let blend = match;
-    if (moving) { blend *= 0.3; this.fx.noiseRing(this.player.pos, Math.min(1, mag * (this.input.run ? 1.4 : 1))); }
+    const motion = Math.min(1, speedNow / 9);
+    if (moving) { blend *= (1 - motion * 0.75); this.fx.noiseRing(this.player.pos, 0.4 + motion * (this.input.run ? 1.0 : 0.7)); }
+    if (!this._onGround) blend *= 0.4;                 // jumping is very revealing
     const sil = this.player.cham.silhouette();
     if (sil !== 'tall') blend = Math.min(1, blend + 0.14);
     blend = Math.max(0, Math.min(1, blend));
@@ -261,11 +349,17 @@ export class Game {
     const hunter = this._nearestHunter();
     let lookAt = null;
     if (hunter) { const a = Math.atan2(hunter.pos.x - this.player.pos.x, hunter.pos.z - this.player.pos.z) - this.player.heading; lookAt = Math.max(-0.6, Math.min(0.6, Math.sin(a))); }
-    this.player.cham.update(dt, { moving, lookAt });
+    this.player.cham.update(dt, { moving, lookAt, speed: speedNow });
 
     // AI + hunters
     this.manager.update(dt, this.survived);
     this._handleEvents();
+
+    // animated map detail (fireplace flicker, chandelier sway, dust, fountain)
+    this._clock += dt;
+    if (this.map && this.map.update) this.map.update(dt, this._clock);
+    // stamina HUD
+    this.ui.setStamina && this.ui.setStamina(this._stamina, wantSprint);
 
     // camo HUD state
     let state = 'HIDDEN';
@@ -346,9 +440,18 @@ export class Game {
 
   renderScene(dt, tick) {
     if (this.player) {
-      this._camTarget(this._tmp);
-      this.camera.position.lerp(this._tmp, this.paused ? 0.06 : 0.16);
-      this.camera.lookAt(this.player.pos.x, this.player.pos.y + 1.4, this.player.pos.z);
+      // smooth, collision-resolved follow with a touch of frame-rate independence
+      this._camResolved(this._camPos);
+      const s = 1 - Math.pow(0.001, dt); // ~time-constant smoothing
+      this.camera.position.lerp(this._camPos, this.paused ? s * 0.4 : Math.min(1, s * 1.4));
+      this._focusPoint(this._tmp);
+      this._camLook.lerp(this._tmp, Math.min(1, s * 1.6));
+      this.camera.lookAt(this._camLook);
+      // dynamic FOV: widen on sprint / slide for a sense of speed
+      const speedNow = Math.hypot(this._vx, this._vz);
+      const fovTarget = 52 + (this.input.run && speedNow > 6 ? 8 : 0) + (this._slide > 0 ? 6 : 0);
+      this.fov += (fovTarget - this.fov) * Math.min(1, dt * 6);
+      if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
       if (this.map && this.map.sun) this.map.sun.target.position.copy(this.player.pos);
       if (this.fx) this.fx.applyShake(this.camera);
     }
@@ -376,7 +479,7 @@ export class Game {
 
   resize() { this.engine.resize(); }
 
-  _clearTimers() { this._tutTimers.forEach(clearTimeout); this._tutTimers = []; this._roundTimers.forEach(clearTimeout); this._roundTimers = []; }
+  _clearTimers() { clearTimeout(this._buildT); this._tutTimers.forEach(clearTimeout); this._tutTimers = []; this._roundTimers.forEach(clearTimeout); this._roundTimers = []; }
 
   dispose() {
     cancelAnimationFrame(this.raf);

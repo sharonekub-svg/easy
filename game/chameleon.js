@@ -67,17 +67,31 @@ export class Chameleon {
     snout.scale.set(0.9, 0.7, 1.1); this.head.add(snout);
     this.pivot.add(this.head);
 
-    // turret eyes (cute) — white ball + dark pupil on a little cone
+    // turret eyes (cute) — skin turret + glossy ball, pupil and a catch-light;
+    // the ball group blinks by squashing in Y.
     this.eyes = [];
     [-1, 1].forEach((s) => {
       const eye = new THREE.Group(); eye.position.set(0.26 * s, 0.12, 0.04);
-      const cone = skin(new THREE.SphereGeometry(0.2, 14, 12), 0, 0, 0, 0.5); cone.scale.set(1, 1, 1); eye.add(cone);
-      const white = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 12), new THREE.MeshStandardMaterial({ color: 0xfff7ec, roughness: 0.3 }));
-      white.position.set(0.06 * s, 0.02, 0.08); eye.add(white);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), new THREE.MeshStandardMaterial({ color: 0x141018, roughness: 0.2 }));
-      pupil.position.set(0.09 * s, 0.02, 0.15); eye.add(pupil);
-      this.head.add(eye); this.eyes.push({ g: eye, pupil });
+      const cone = skin(new THREE.SphereGeometry(0.2, 16, 12), 0, 0, 0, 0.5); eye.add(cone); cone._tint = 0.92;
+      const ball = new THREE.Group(); ball.position.set(0.06 * s, 0.02, 0.08); eye.add(ball);
+      const white = new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 14), new THREE.MeshStandardMaterial({ color: 0xfff7ec, roughness: 0.18, metalness: 0.0 }));
+      ball.add(white);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.058, 14, 12), new THREE.MeshStandardMaterial({ color: 0x0c0a10, roughness: 0.1 }));
+      pupil.position.set(0.03 * s, 0.0, 0.085); ball.add(pupil);
+      const glint = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      glint.position.set(0.055 * s, 0.04, 0.1); ball.add(glint);
+      this.head.add(eye); this.eyes.push({ g: eye, ball, pupil, cone });
     });
+    this._blink = 0; this._nextBlink = 1.5 + Math.random() * 3;
+
+    // tongue (darts out occasionally / when absorbing)
+    this.tongue = new THREE.Group(); this.tongue.position.set(0, -0.05, 0.5);
+    const tMat = new THREE.MeshStandardMaterial({ color: 0xe06a8a, roughness: 0.4 });
+    const tStalk = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1, 8), tMat); tStalk.rotation.x = Math.PI / 2; tStalk.position.z = 0.5; this.tongue.add(tStalk);
+    const tTip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), tMat); tTip.position.z = 1.0; this.tongue.add(tTip);
+    this.tongue.scale.z = 0.001; this.head.add(this.tongue);
+    this._tongue = 0; this._nextTongue = 3 + Math.random() * 5;
+    this._hop = 0; this._lean = 0;
 
     // tail — tapering curl
     this.tail = new THREE.Group(); this.tail.position.set(0, 0.5, -0.65);
@@ -117,7 +131,9 @@ export class Chameleon {
     this.body.material.color.copy(this.color);
   }
 
-  pulseAbsorb() { this._absorb = 1; }
+  pulseAbsorb() { this._absorb = 1; this._tongueDrive = 1; }
+  hop() { this._launch = 1; }
+  land() { this._land = 1; this._tongueDrive = Math.max(this._tongueDrive || 0, 0); }
 
   setPose(name) { if (POSES[name]) this.pose = name; }
 
@@ -151,28 +167,53 @@ export class Chameleon {
     const P = POSES[this.pose], c = this._cur, pk = Math.min(1, dt * 9);
     for (const key in P) if (typeof P[key] === 'number') c[key] += (P[key] - c[key]) * pk;
 
+    // jump squash/stretch envelopes
+    this._launch = Math.max(0, (this._launch || 0) - dt * 4);
+    this._land = Math.max(0, (this._land || 0) - dt * 5);
+    const launch = this._launch, land = this._land;
+
+    // movement lean (body tips into travel)
+    const leanTarget = Math.min(1, (st.speed || 0) / 9) * (st.moving ? 1 : 0);
+    this._lean += (leanTarget - this._lean) * Math.min(1, dt * 8);
+
     // squash & stretch on movement / breathing
     const breathe = Math.sin(this._t * 2.2) * 0.02;
     const moving = st.moving;
     const gallop = moving ? Math.abs(Math.sin(this._t * 12)) * 0.05 : 0;
     this.pivot.scale.set(
-      c.sxz - gallop * 0.4,
-      c.sy + breathe + gallop,
-      c.sxz - gallop * 0.4);
+      c.sxz - gallop * 0.4 - launch * 0.14 + land * 0.2,
+      c.sy + breathe + gallop + launch * 0.26 - land * 0.28,
+      c.sxz - gallop * 0.4 - launch * 0.14 + land * 0.2);
     this.pivot.position.y = c.y;
-    this.pivot.rotation.x = c.tilt * Math.PI * 0.46;
+    this.pivot.rotation.x = c.tilt * Math.PI * 0.46 + this._lean * 0.18;
 
     // head tuck for curl
     this.head.scale.setScalar(Math.max(0.001, c.head));
     this.head.position.y = 0.78 - (1 - c.head) * 0.3 + c.tuck * -0.1;
     this.head.position.z = 0.55 - c.tuck * 0.5;
-    // eyes look around / toward danger
+    // blink timer
+    this._nextBlink -= dt;
+    if (this._nextBlink <= 0 && this._blink === 0) { this._blink = 0.0001; }
+    if (this._blink > 0) { this._blink += dt * 7; if (this._blink >= 2) { this._blink = 0; this._nextBlink = 1.8 + Math.random() * 4; } }
+    const lid = this._blink > 0 ? Math.max(0.08, 1 - Math.sin(Math.min(Math.PI, this._blink * Math.PI / 2)) * 0.92) : 1;
+
+    // eyes look around independently (chameleon!) / toward danger
     const look = st.lookAt;
     this.eyes.forEach((e, i) => {
-      const wobble = Math.sin(this._t * 1.3 + i * 2) * 0.2;
-      e.g.rotation.y = (look != null ? look : wobble);
-      e.g.rotation.x = Math.sin(this._t * 0.9 + i) * 0.1;
+      const wobble = Math.sin(this._t * 1.1 + i * 2.3) * 0.28;
+      e.g.rotation.y = (look != null ? look * (i ? 1 : 0.7) : wobble);
+      e.g.rotation.x = Math.sin(this._t * 0.8 + i) * 0.12;
+      e.ball.scale.y = lid;
+      e.cone.material.color.setRGB(Math.min(1, this.color.r * 0.92), Math.min(1, this.color.g * 0.92), Math.min(1, this.color.b * 0.92));
     });
+
+    // tongue flick (timer or on absorb)
+    this._nextTongue -= dt;
+    if (this._nextTongue <= 0) { this._tongueDrive = 1; this._nextTongue = 4 + Math.random() * 6; }
+    if (this._tongueDrive > 0) { this._tongue += dt * 6; if (this._tongue >= 2) { this._tongue = 0; this._tongueDrive = 0; } }
+    const tExt = this._tongue > 0 ? Math.sin(Math.min(Math.PI, this._tongue * Math.PI / 2)) : 0;
+    this.tongue.scale.z = Math.max(0.001, tExt * 1.3);
+    this.tongue.visible = this.pose !== 'curl';
 
     // tail curl tightens in ball pose
     this.tail.scale.setScalar(1 - c.tuck * 0.3);

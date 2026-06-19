@@ -41,6 +41,9 @@ const GradeShader = {
       vec2 d = vUv - 0.5;
       float v = smoothstep(0.85, uVignette*0.35, dot(d,d)*2.0);
       c *= mix(1.0, v, 0.55);
+      // subtle film grain for a filmic, less "digital" look
+      float grain = fract(sin(dot(vUv * (uTime + 1.0), vec2(12.9898, 78.233))) * 43758.5453);
+      c += (grain - 0.5) * 0.018;
       // final-seconds red tick vignette
       if(uTick > 0.0){
         float pulse = 0.5 + 0.5*sin(uTime*12.0);
@@ -60,7 +63,7 @@ export class Engine {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: this.quality === 'low', powerPreference: 'high-performance' });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.12;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = renderer;

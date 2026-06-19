@@ -31,10 +31,10 @@ export class Input {
       a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right'
     };
     const actionMap = {
-      e: 'eyedrop', f: 'eyedrop', ' ': 'pose_stand', '1': 'pose_stand',
+      e: 'eyedrop', f: 'eyedrop', ' ': 'jump', '1': 'pose_stand',
       c: 'pose_crouch', '2': 'pose_crouch', 'control': 'pose_crouch',
       'x': 'pose_curl', '3': 'pose_curl', 'z': 'pose_lie', '4': 'pose_lie',
-      q: 'look_l', 'r': 'interact', 'p': 'pause', 'escape': 'pause', 'm': 'mute'
+      'r': 'interact', 'p': 'pause', 'escape': 'pause', 'm': 'mute'
     };
 
     this._kd = (e) => {
@@ -141,10 +141,11 @@ export class Input {
       else if (p && !this._gpPrev[i] && action === 'pause') this._fire(action);
       this._gpPrev[i] = p;
     };
-    btn(0, 'pose_crouch');  // A
+    btn(0, 'jump');         // A
     btn(1, 'pose_curl');    // B
     btn(2, 'eyedrop');      // X
     btn(3, 'pose_lie');     // Y
+    btn(4, 'pose_crouch');  // LB
     btn(5, 'pose_stand');   // RB
     btn(9, 'pause');        // start
   }

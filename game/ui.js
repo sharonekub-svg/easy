@@ -57,6 +57,8 @@ const CSS = `
 .mc-camo-lbl{font-family:'Martian Mono';font-size:11px;font-weight:800;letter-spacing:2px;text-shadow:0 1px 4px rgba(0,0,0,.6);}
 .mc-camo-track{width:100%;height:9px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.3);border-radius:999px;overflow:hidden;}
 .mc-camo-fill{height:100%;width:0;background:#2ec4a6;transition:width .12s,background .25s;}
+.mc-stam-track{width:70%;height:4px;margin-top:3px;background:rgba(0,0,0,.4);border-radius:999px;overflow:hidden;}
+.mc-stam-fill{height:100%;width:100%;background:#7ad3ff;transition:width .1s,background .2s;}
 .mc-arrow{position:absolute;top:50%;left:50%;width:120px;height:120px;margin:-60px 0 0 -60px;pointer-events:none;transition:opacity .2s;opacity:0;}
 .mc-arrow svg{width:100%;height:100%;}
 .mc-mini{position:absolute;top:14px;right:14px;width:128px;height:128px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(12,10,16,.55);overflow:hidden;}
@@ -107,6 +109,8 @@ const CSS = `
 .mc-seg button{font-family:'Martian Mono';font-size:11px;background:transparent;color:rgba(255,255,255,.6);border:none;padding:6px 12px;cursor:pointer;}
 .mc-seg button.active{background:#43c0d8;color:#0c0a10;}
 .mc-slider{width:130px;}
+.mc-spinner{width:54px;height:54px;border-radius:50%;border:4px solid rgba(255,255,255,.12);border-top-color:#7ee08a;border-right-color:#43c0d8;animation:mc-spin .8s linear infinite;}
+@keyframes mc-spin{to{transform:rotate(360deg);}}
 `;
 
 export class UI {
@@ -120,6 +124,12 @@ export class UI {
     this.isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || matchMedia('(pointer:coarse)').matches;
     this.hsv = { h: 0.33, s: 0.5, v: 0.8 };
     this._build();
+    // delegated hover SFX for interactive elements
+    this.root.addEventListener('mouseover', (e) => {
+      const t = e.target.closest && e.target.closest('.mc-btn,.mc-card,.mc-pose,.mc-eye');
+      if (t && t !== this._lastHover) { this._lastHover = t; this.cb.hover && this.cb.hover(); }
+    });
+    this.root.addEventListener('mouseout', () => { this._lastHover = null; });
   }
 
   _el(cls, html) { const d = document.createElement('div'); if (cls) d.className = cls; if (html != null) d.innerHTML = html; return d; }
@@ -128,11 +138,21 @@ export class UI {
     this._buildMenu();
     this._buildMode();
     this._buildMap();
+    this._buildLoading();
     this._buildHUD();
     this._buildResults();
     this._buildPause();
     this.showScreen('menu');
   }
+
+  _buildLoading() {
+    const s = this._el('mc-screen hide', '');
+    s.appendChild(this._el('mc-spinner', ''));
+    this.loadingTxt = this._el('mc-tag', 'PREPARING THE MAP…');
+    s.appendChild(this.loadingTxt);
+    this.loadingEl = s; this.root.appendChild(s);
+  }
+  showLoading(label) { if (label) this.loadingTxt.textContent = label; this.showScreen('loading'); }
 
   _buildMenu() {
     const s = this._el('mc-screen', '');
@@ -190,8 +210,8 @@ export class UI {
     top.append(this.phaseEl, this.timerEl, this.coinEl, this.bestEl);
     h.appendChild(top);
 
-    // camo
-    const camo = this._el('mc-camo', '<div class="mc-camo-lbl" id="mc-camo-lbl">HIDDEN</div><div class="mc-camo-track"><div class="mc-camo-fill" id="mc-camo-fill"></div></div>');
+    // camo + stamina
+    const camo = this._el('mc-camo', '<div class="mc-camo-lbl" id="mc-camo-lbl">HIDDEN</div><div class="mc-camo-track"><div class="mc-camo-fill" id="mc-camo-fill"></div></div><div class="mc-stam-track"><div class="mc-stam-fill" id="mc-stam-fill"></div></div>');
     h.appendChild(camo);
 
     // hunter arrow
@@ -308,6 +328,11 @@ export class UI {
   setCoins(n) { this.coinEl.querySelector('.v').textContent = n; }
   setBest(s) { this.bestEl.querySelector('.v').textContent = Math.floor(s) + 's'; }
   setActivePose(name) { for (const k in this.poseBtns) this.poseBtns[k].classList.toggle('active', k === name); }
+  setStamina(v, sprinting) {
+    const f = document.getElementById('mc-stam-fill'); if (!f) return;
+    f.style.width = Math.round(v * 100) + '%';
+    f.style.background = v < 0.2 ? '#e8483b' : (sprinting ? '#ffd98a' : '#7ad3ff');
+  }
 
   setCamo(state, value) {
     const fill = document.getElementById('mc-camo-fill'), lbl = document.getElementById('mc-camo-lbl');
@@ -402,7 +427,7 @@ export class UI {
   }
 
   showScreen(name) {
-    const map = { menu: this.menuEl, mode: this.modeEl, map: this.mapEl, results: this.resultsEl, pause: this.pauseEl };
+    const map = { menu: this.menuEl, mode: this.modeEl, map: this.mapEl, results: this.resultsEl, pause: this.pauseEl, loading: this.loadingEl };
     Object.keys(map).forEach((k) => {
       const el = map[k]; if (!el) return;
       if (k === name) { el.classList.remove('hide'); requestAnimationFrame(() => el.classList.add('show')); }
