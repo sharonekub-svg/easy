@@ -102,6 +102,9 @@ export class Agent {
   constructor(opts) {
     this.cham = new Chameleon({ color: opts.color, isAI: !opts.isPlayer });
     this.group = this.cham.group;
+    this.scale = opts.scale || 1;
+    this.group.scale.setScalar(this.scale);
+    this.radius = Math.max(0.2, 0.55 * this.scale);   // collision footprint scales with size
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
     this.team = opts.team || 'hider';
@@ -134,26 +137,30 @@ export class EntityManager {
   add(a) { this.agents.push(a); this.world.scene.add(a.group); return a; }
   clear() { this.agents.forEach((a) => { if (a.group.parent) a.group.parent.remove(a.group); a.cham.dispose(); }); this.agents = []; this.player = null; }
 
-  spawn(mode, mapDesc, playerColor, hiderCount) {
+  spawn(mode, mapDesc, playerColor, hiderCount, opts) {
     this.mode = mode; this.clear();
+    opts = opts || {};
+    // toy-scale cast: little chameleons, a towering hunter
+    this.hiderScale = opts.hiderScale || 0.62;
+    this.hunterScale = opts.hunterScale || 1.7;
     const spawns = mapDesc.spawns.slice();
     // player
-    const p = new Agent({ color: playerColor, team: mode === 'double' ? 'hider' : 'hider', isPlayer: true, name: 'You' });
+    const p = new Agent({ color: playerColor, team: 'hider', isPlayer: true, name: 'You', scale: this.hiderScale });
     const ps = spawns.shift() || mapDesc.hunterSpawn;
     p.setPos(ps); this.player = p; this.add(p);
 
-    // AI hiders
+    // AI hiders (slight size variation so they read as different little toys)
     const palette = [0x7ec850, 0xe6b93c, 0x4f9dd8, 0xe0739a, 0x9b6fd0, 0x55c0a0];
     const n = hiderCount == null ? 4 : hiderCount;
     for (let i = 0; i < n; i++) {
-      const a = new Agent({ color: palette[i % palette.length], team: 'hider', name: 'Hider ' + (i + 1) });
+      const a = new Agent({ color: palette[i % palette.length], team: 'hider', name: 'Hider ' + (i + 1), scale: this.hiderScale * (0.9 + Math.random() * 0.25) });
       const sp = spawns[i % spawns.length] || mapDesc.hunterSpawn;
       a.setPos(new THREE.Vector3(sp.x + (Math.random() - 0.5) * 4, 0, sp.z + (Math.random() - 0.5) * 4));
       a._newWaypoint = true; this.add(a);
     }
 
-    // hunter (not in double's hide phase)
-    const h = new Agent({ color: 0xd6342a, team: 'hunter', name: 'Hunter' });
+    // the HUNTER — much larger and more imposing
+    const h = new Agent({ color: 0xd6342a, team: 'hunter', name: 'Hunter', scale: this.hunterScale });
     h.cham.setColorTarget(new THREE.Color(0xd6342a), true);
     h.setPos(mapDesc.hunterSpawn.clone());
     h._isHunter = true; this.hunterAgent = h; this.add(h);
@@ -252,7 +259,7 @@ export class EntityManager {
     }
     this._separate(a, dir, this.agents.filter((x) => x.team === 'hider' && !x.isPlayer), 2.2, 0.5);
     if ((a._stuck || 0) > 0.4 && speed > 0) { const ang = Math.atan2(dir.x, dir.z) + (a._stuckSide || 1) * 1.3; dir.set(Math.sin(ang), 0, Math.cos(ang)); a._wpT = 0; }
-    this._moveAgent(a, dir, speed, dt, 0.6, 9);
+    this._moveAgent(a, dir, speed, dt, a.radius, 9);
 
     a._eyeT -= dt;
     if (a._eyeT <= 0) { a._eyeT = 1.5 + Math.random() * 2.5; world.surfaceColorAt(a.pos, a._ref); a.cham.setColorTarget(a._ref); a.cham.pulseAbsorb(); }
@@ -309,7 +316,7 @@ export class EntityManager {
       this._separate(h, dir, this.hunters(), 2.8, 0.7); // hunters spread out
       if ((h._stuck || 0) > 0.4) { const ang = Math.atan2(dir.x, dir.z) + (h._stuckSide || 1) * 1.2; dir.set(Math.sin(ang), 0, Math.cos(ang)); }
     }
-    this._moveAgent(h, dir, speed, dt, 0.6, turn);
+    this._moveAgent(h, dir, speed, dt, h.radius, turn);
 
     // eyes track the prey / last-known point
     let lookAt = null;
@@ -318,7 +325,8 @@ export class EntityManager {
 
     // CATCH: seen, or a moving target point-blank
     for (const t of targets) {
-      if (t.alive && t.pos.distanceTo(h.pos) < 1.55 && (this.sees(h, t) || (t._noise || 0) > 0.25)) this._catch(t, h);
+      const catchDist = h.radius + t.radius + 0.6;
+      if (t.alive && t.pos.distanceTo(h.pos) < catchDist && (this.sees(h, t) || (t._noise || 0) > 0.25)) this._catch(t, h);
     }
     h.syncMesh(); h.cham.update(dt, { moving: h._moving || scanning, lookAt });
   }

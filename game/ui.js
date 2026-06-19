@@ -174,7 +174,7 @@ export class UI {
     play.onclick = () => { this.cb.click && this.cb.click(); this.showScreen('mode'); };
     s.appendChild(play);
     const tut = document.createElement('button'); tut.className = 'mc-btn ghost'; tut.textContent = 'HOW TO PLAY';
-    tut.onclick = () => { this.cb.click && this.cb.click(); this.cb.start && this.cb.start('classic', 'mansion', true); };
+    tut.onclick = () => { this.cb.click && this.cb.click(); this.cb.start && this.cb.start('classic', 'toyroom', true); };
     s.appendChild(tut);
     this.menuEl = s; this.root.appendChild(s);
   }
@@ -248,7 +248,7 @@ export class UI {
     this.bright = document.createElement('input'); this.bright.type = 'range'; this.bright.min = 0; this.bright.max = 100; this.bright.value = 80; this.bright.className = 'mc-bright';
     const colcol = this._el('mc-colcol', '');
     this.swatch = this._el('mc-swatch', '');
-    this.eyeBtn = document.createElement('button'); this.eyeBtn.className = 'mc-eye'; this.eyeBtn.innerHTML = '<span class="mc-eye-ic">' + ICONS.dropper + '</span>EYEDROP · E';
+    this.eyeBtn = document.createElement('button'); this.eyeBtn.className = 'mc-eye'; this.eyeBtn.innerHTML = '<span class="mc-eye-ic">' + ICONS.dropper + '</span>PAINT · E';
     colcol.append(this.swatch, this.eyeBtn);
     tools.append(wheelWrap, this.bright, colcol);
     h.appendChild(tools);

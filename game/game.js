@@ -73,7 +73,7 @@ export class Game {
     this._clearTimers();
     // show the loading screen instantly, then build on the next frames so it paints
     this.state = 'loading';
-    this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : 'THE MANSION…'));
+    this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : mapId === 'toyroom' ? 'THE TOY ROOM…' : 'THE MANSION…'));
     clearTimeout(this._buildT);
     this._buildT = setTimeout(() => this._doStartRound(mode, mapId, tutorial), 50);
   }
@@ -89,7 +89,8 @@ export class Game {
     this.world = new World(this.scene, map);
     this.manager = new EntityManager(this.world, this.audio);
     const hiders = 4 + Math.floor(Math.random() * 2);
-    this.manager.spawn(this.mode, map, this._playerTarget.clone(), hiders);
+    const scaleOpts = map.castScale || { hiderScale: 0.62, hunterScale: 1.7 };
+    this.manager.spawn(this.mode, map, this._playerTarget.clone(), hiders, scaleOpts);
     this.player = this.manager.player;
     this.player.cham.setColorTarget(this._playerTarget, true);
     this.ui.syncColor({ r: this._playerTarget.r, g: this._playerTarget.g, b: this._playerTarget.b });
@@ -99,8 +100,12 @@ export class Game {
     // reset movement physics
     this._vx = this._vz = this._vy = 0; this._onGround = true; this._slide = 0; this._stamina = 1; this._clock = 0; this._noiseBoost = 0;
 
-    // camera behind the player, aligned to its spawn heading
-    this.yaw = 0; this.pitch = 0.42; this.fov = 56; this.camera.fov = 56; this.camera.updateProjectionMatrix();
+    // camera framing scales with how small the player is (little toy = closer, lower)
+    this.playerScale = this.player.scale || 1;
+    this._focusH = 0.95 * this.playerScale + 0.35;
+    this.camDist = 3.4 + 5.6 * this.playerScale;
+    this.camShoulder = 0.55 * this.playerScale;
+    this.yaw = 0; this.pitch = 0.40; this.fov = 58; this.camera.fov = 58; this.camera.updateProjectionMatrix();
     this._focusPoint(this._camLook);
     this._snapCamera();
 
@@ -109,6 +114,7 @@ export class Game {
     this.ui.setCoins(0); this.ui.setActivePose('stand');
     this.ui.setPhase('HIDE — get camouflaged', '#7ee08a');
     this.ui.showScreen('hud'); this.ui.clearHints();
+    this.ui.armEyedrop(true); // crosshair always visible so you can aim the brush
     this.input.setEnabled(true);
 
     this.audio.startAmbient(map.mood === 'cozy' ? 'cozy' : 'spooky');
@@ -122,11 +128,11 @@ export class Game {
 
   _runTutorial() {
     const seq = [
-      [200, 'Move with WASD · hold SHIFT to sprint · SPACE to hop'],
-      [3800, 'Drag to look · sprint + C to slide into cover'],
-      [7600, 'Press E to EYEDROP the colour under your crosshair'],
-      [11400, 'Match a nearby surface so your CAMO meter fills'],
-      [15200, 'STAY STILL to vanish — movement sends out a noise ring!']
+      [200, 'Move with W A S D · hold SHIFT to sprint · SPACE to hop'],
+      [3800, 'Aim at any object with the crosshair, press E to PAINT yourself its colour'],
+      [7600, 'The brush sweeps the colour over your body — match a nearby toy'],
+      [11400, 'STAY STILL on matching cover so your CAMO meter fills and you vanish'],
+      [15200, 'Moving makes noise — the giant hunter can HEAR you!']
     ];
     seq.forEach((s) => this._tutTimers.push(setTimeout(() => this.ui.showHint(s[1], 3800), s[0])));
   }
@@ -205,19 +211,25 @@ export class Game {
     this.audio.pose();
   }
 
+  // Pick a colour from the world, then actively PAINT yourself with it.
+  // You aim at an object with the crosshair (or stand on a surface) and press;
+  // the chameleon lifts a brush and the colour sweeps up its body.
   eyedrop() {
     if (!this.player || !this.world) return;
-    // raycast from camera through the crosshair (screen centre) to the exact surface
+    // 1) the exact surface under the crosshair (the object you're pointing at)
     this._ray.setFromCamera({ x: 0, y: 0 }, this.camera);
-    const res = this.world.pickColorRay(this._ray, this._ref);
+    let res = this.world.pickColorRay(this._ray, this._ref);
+    // 2) fall back to the surface you're standing on ("come out on it")
+    if (!res.hit) { this.world.surfaceColorAt(this.player.pos, this._ref); res = { color: this._ref, point: this.player.pos, hit: true }; }
     this._playerTarget.copy(res.color);
-    this.player.cham.setColorTarget(this._playerTarget);
-    this.player.cham.pulseAbsorb();
+    this.player.cham.paintSelf(this._playerTarget, 0.7);  // brush + bottom-up sweep
     this.ui.syncColor({ r: res.color.r, g: res.color.g, b: res.color.b });
+    // splatter at the source AND over the chameleon as it paints
     this.fx.paintSplash(res.point ? res.point : this.player.pos, res.color);
+    this.fx.paintSplash(this.player.pos, res.color);
     this.audio.absorb();
     this.coins += 2; this.ui.setCoins(this.coins);
-    this.ui.showHint('Absorbed ' + this._hex(res.color) + ' — now hold still!', 1800);
+    this.ui.showHint('Painting yourself ' + this._hex(res.color) + ' — hold still to vanish!', 1900);
   }
   _hex(c) { const f = (x) => ('0' + Math.round(x * 255).toString(16)).slice(-2); return '#' + f(c.r) + f(c.g) + f(c.b); }
 
@@ -231,17 +243,17 @@ export class Game {
   /* ---------------- camera ---------------- */
   // focus point: chest height, nudged ahead in travel, with a slight shoulder offset
   _focusPoint(out) {
-    const p = this.player.pos;
+    const p = this.player.pos; const h = this._focusH || 1.35;
     const sx = Math.cos(this.yaw) * this.camShoulder, sz = -Math.sin(this.yaw) * this.camShoulder;
-    out.set(p.x + this._vx * 0.1 + sx, p.y + 1.35, p.z + this._vz * 0.1 + sz);
+    out.set(p.x + this._vx * 0.1 + sx, p.y + h, p.z + this._vz * 0.1 + sz);
     return out;
   }
   // desired (unclamped) camera position behind/above the player, over the shoulder
   _camDesired(out) {
-    const p = this.player.pos;
+    const p = this.player.pos; const h = this._focusH || 1.35;
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), ch = Math.cos(this.pitch);
     const sx = Math.cos(this.yaw) * this.camShoulder, sz = -Math.sin(this.yaw) * this.camShoulder;
-    out.set(p.x - fx * this.camDist * ch + sx, p.y + 1.35 + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch + sz);
+    out.set(p.x - fx * this.camDist * ch + sx, p.y + h + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch + sz);
     return out;
   }
   // collision-resolved camera position (never clips through walls)
@@ -250,7 +262,7 @@ export class Game {
     const desired = this._camDesired(out);
     const frac = this.world ? this.world.cameraHitFrac(focus, desired, 2.2) : 1;
     if (frac < 1) { out.lerpVectors(focus, desired, Math.max(0.25, frac * 0.92)); }
-    if (out.y < 0.6) out.y = 0.6; // never dip below the floor
+    if (out.y < 0.4) out.y = 0.4; // never dip below the floor
     return out;
   }
   _snapCamera() {
@@ -316,7 +328,8 @@ export class Game {
 
     // integrate horizontal
     p.x += this._vx * dt; p.z += this._vz * dt;
-    this.world.clampBounds(p, 0.6); this.world.collide(p, 0.6);
+    const pr = this.player.radius || 0.4;
+    this.world.clampBounds(p, pr); this.world.collide(p, pr);
     if (moving) {
       const target = Math.atan2(this._vx, this._vz);
       let d = target - this.player.heading; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
@@ -459,7 +472,7 @@ export class Game {
       this.camera.lookAt(this._camLook);
       // dynamic FOV: widen on sprint / slide for a sense of speed
       const speedNow = Math.hypot(this._vx, this._vz);
-      const fovTarget = 56 + (this.input.run && speedNow > 6 ? 8 : 0) + (this._slide > 0 ? 6 : 0);
+      const fovTarget = 58 + (this.input.run && speedNow > 6 ? 8 : 0) + (this._slide > 0 ? 6 : 0);
       this.fov += (fovTarget - this.fov) * Math.min(1, dt * 6);
       if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
       if (this.map && this.map.sun) this.map.sun.target.position.copy(this.player.pos);

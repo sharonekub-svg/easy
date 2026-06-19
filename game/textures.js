@@ -171,6 +171,52 @@ export function grass(baseColor) {
   return { map, bump: map };
 }
 
+// ---------- KID ROOM extras ----------
+export function stripes(c1, c2, n) {
+  const key = 'stripe' + c1 + c2 + (n || 6);
+  const m = make(key, 256, (g, s) => {
+    const k = n || 6, h = s / k;
+    for (let i = 0; i < k; i++) { g.fillStyle = hex(i % 2 ? c2 : c1); g.fillRect(0, i * h, s, h); }
+    noise(g, s, 0.03);
+  });
+  return { map: m, bump: null };
+}
+export function stars(base, star) {
+  const key = 'stars' + base + star;
+  const m = make(key, 256, (g, s) => {
+    g.fillStyle = hex(base); g.fillRect(0, 0, s, s);
+    g.fillStyle = hex(star == null ? 0xffffff : star);
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * s, y = Math.random() * s, r = 2 + Math.random() * 4;
+      g.globalAlpha = 0.5 + Math.random() * 0.4;
+      g.beginPath();
+      for (let p = 0; p < 5; p++) { const a = -Math.PI / 2 + p * Math.PI * 2 / 5; g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); const a2 = a + Math.PI / 5; g.lineTo(x + Math.cos(a2) * r * 0.45, y + Math.sin(a2) * r * 0.45); }
+      g.closePath(); g.fill();
+    }
+    g.globalAlpha = 1; noise(g, s, 0.02);
+  });
+  return { map: m, bump: null };
+}
+export function playmat() {
+  const key = 'playmat';
+  const m = make(key, 512, (g, s) => {
+    g.fillStyle = '#6fbf4a'; g.fillRect(0, 0, s, s);                       // grass
+    // ponds
+    g.fillStyle = '#4aa3d8'; g.beginPath(); g.ellipse(s * 0.72, s * 0.28, 70, 50, 0.3, 0, 7); g.fill();
+    // roads
+    g.strokeStyle = '#6b6b72'; g.lineWidth = 38; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(40, s * 0.2); g.bezierCurveTo(s * 0.4, s * 0.1, s * 0.5, s * 0.7, s - 40, s * 0.6); g.stroke();
+    g.beginPath(); g.moveTo(s * 0.2, s - 30); g.bezierCurveTo(s * 0.3, s * 0.5, s * 0.7, s * 0.5, s * 0.8, 30); g.stroke();
+    g.strokeStyle = '#f5e85a'; g.lineWidth = 3; g.setLineDash([14, 14]);
+    g.beginPath(); g.moveTo(40, s * 0.2); g.bezierCurveTo(s * 0.4, s * 0.1, s * 0.5, s * 0.7, s - 40, s * 0.6); g.stroke();
+    g.setLineDash([]);
+    // sandy patch + buildings
+    g.fillStyle = '#e6cf8a'; g.beginPath(); g.ellipse(s * 0.25, s * 0.78, 60, 44, 0, 0, 7); g.fill();
+    ['#d84b4b', '#e6b93c', '#4f9dd8'].forEach((c, i) => { g.fillStyle = c; g.fillRect(s * 0.5 + i * 40, s * 0.2, 28, 28); });
+  });
+  return { map: m, bump: null };
+}
+
 // apply a {map,bump} pack to a material with sensible repeat
 export function applyTex(mat, pack, repeat, bumpScale) {
   if (!pack || !pack.map) return mat;
