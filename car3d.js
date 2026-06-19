@@ -315,4 +315,5 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
   }
 
   root.EZCar = { mount: mount };
+  (root.EZGames || (root.EZGames = {})).apex = { mount: mount };
 })(window);
