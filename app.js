@@ -2,25 +2,31 @@
 (function () {
   'use strict';
 
+  var EZ = window.EZCredit;
+
   var state = {
     screen: 'landing',
     landingDraft: '',
     draft: '',
     building: false,
+    model: 'opus',                       // default model (cheapest capable)
+    ledger: EZ.makeLedger(50, 39.50),    // $50 monthly budget, $39.50 already used (79%)
     score: 0,
     best: 0,
     paused: false,
-    credit: 79,
     messages: [
       { role: 'ai', text: "Hey — tell me what game you want and I'll have it running on the right in seconds." },
       { role: 'user', text: "make a neon snake game that speeds up as you grow" },
-      { role: 'ai', text: "Done. Neon Snake is live on the right — click it and use the arrow keys. Want power-ups or a high-score board next?", meta: { time: '3.2s', steps: ['Scaffolding canvas renderer', 'Wiring keyboard controls', 'Adding neon glow + scoring'] } }
+      { role: 'ai', text: "Done. Neon Snake is live on the right — click it and use the arrow keys. Want power-ups or a high-score board next?", meta: { time: '3.2s', steps: ['Scaffolding canvas renderer', 'Wiring keyboard controls', 'Adding neon glow + scoring'], cost: { usd: EZ.estimate('opus', 'build').usd, model: 'opus' } } }
     ]
   };
 
   var $ = function (id) { return document.getElementById(id); };
   var game = null;
   var buildTimer = null;
+
+  function fmtUSD(v) { return '$' + v.toFixed(v < 1 ? 3 : 2); }
+  function pctOfBudget(usd) { return (usd / state.ledger.budgetUSD) * 100; }
 
   /* ---------- routing ---------- */
   function go(screen) {
@@ -51,24 +57,8 @@
           '<span class="msg-ai-name">EZ Assistant</span></div>' +
           '<div class="msg-ai-body"></div>';
         ai.querySelector('.msg-ai-body').textContent = m.text;
-        if (m.meta) {
-          var log = document.createElement('div');
-          log.className = 'buildlog';
-          var head = document.createElement('div');
-          head.className = 'buildlog-head';
-          head.innerHTML = '<span class="buildlog-title">BUILD LOG</span>' +
-            '<span class="buildlog-time"></span>';
-          head.querySelector('.buildlog-time').textContent = m.meta.time;
-          log.appendChild(head);
-          m.meta.steps.forEach(function (st) {
-            var step = document.createElement('div');
-            step.className = 'buildlog-step';
-            step.innerHTML = '<span class="check">✓</span>';
-            step.appendChild(document.createTextNode(st));
-            log.appendChild(step);
-          });
-          ai.appendChild(log);
-        }
+        if (m.blocked) { ai.appendChild(blockedCard(m.blocked)); }
+        else if (m.meta) { ai.appendChild(buildLog(m.meta)); }
         wrap.appendChild(ai);
       }
       box.appendChild(wrap);
@@ -77,31 +67,113 @@
       var t = document.createElement('div');
       t.className = 'typing';
       t.innerHTML = '<span class="d"></span><span class="d"></span><span class="d"></span>' +
-        '<span class="label">Building your game…</span>';
+        '<span class="label"></span>';
+      t.querySelector('.label').textContent = 'Building your game… est ' + fmtUSD(state.building.usd);
       box.appendChild(t);
     }
     box.scrollTop = box.scrollHeight;
   }
 
+  function buildLog(meta) {
+    var log = document.createElement('div');
+    log.className = 'buildlog';
+    var head = document.createElement('div');
+    head.className = 'buildlog-head';
+    head.innerHTML = '<span class="buildlog-title">BUILD LOG</span><span class="buildlog-time"></span>';
+    head.querySelector('.buildlog-time').textContent = meta.time;
+    log.appendChild(head);
+    meta.steps.forEach(function (st) {
+      var step = document.createElement('div');
+      step.className = 'buildlog-step';
+      step.innerHTML = '<span class="check">✓</span>';
+      step.appendChild(document.createTextNode(st));
+      log.appendChild(step);
+    });
+    if (meta.cost) {
+      var row = document.createElement('div');
+      row.className = 'buildlog-cost';
+      var label = EZ.PRICING[meta.cost.model].label;
+      row.innerHTML = '<span class="lbl">COST · ' + label + '</span><span class="amt"></span>';
+      row.querySelector('.amt').textContent =
+        fmtUSD(meta.cost.usd) + ' · ' + pctOfBudget(meta.cost.usd).toFixed(1) + '%';
+      log.appendChild(row);
+    }
+    return log;
+  }
+
+  function blockedCard(b) {
+    var card = document.createElement('div');
+    card.className = 'blocked';
+    card.innerHTML =
+      '<div class="blocked-head"><span class="live-dot sm"></span>NOT ENOUGH CREDIT</div>' +
+      '<div class="blocked-line"><span>This build needs</span><span class="v warn">' + fmtUSD(b.estUsd) + ' · ' + b.estPct.toFixed(1) + '%</span></div>' +
+      '<div class="blocked-line"><span>You have left</span><span class="v">' + fmtUSD(b.remainingUsd) + ' · ' + b.remainingPct.toFixed(1) + '%</span></div>' +
+      '<div class="blocked-actions"></div>';
+    var actions = card.querySelector('.blocked-actions');
+
+    var top = document.createElement('button');
+    top.className = 'blocked-btn primary';
+    top.textContent = '+ Top up $25';
+    top.addEventListener('click', function () { topUp(); if (b.retry) send(b.retry); });
+    actions.appendChild(top);
+
+    if (b.model !== 'sonnet') {
+      var cheaper = EZ.estimate('sonnet', b.kind);
+      if (EZ.canAfford(state.ledger, cheaper.usd)) {
+        var sw = document.createElement('button');
+        sw.className = 'blocked-btn ghost';
+        sw.textContent = 'Use Sonnet 4.6 (' + fmtUSD(cheaper.usd) + ')';
+        sw.addEventListener('click', function () { setModel('sonnet'); if (b.retry) send(b.retry); });
+        actions.appendChild(sw);
+      }
+    }
+    return card;
+  }
+
   function send(text) {
     var t = (text != null ? text : state.draft).trim();
     if (!t || state.building) return;
+
+    var hasGame = state.messages.some(function (m) { return m.meta; });
+    var kind = EZ.classify(t, hasGame);
+    var est = EZ.estimate(state.model, kind);
+
     state.messages.push({ role: 'user', text: t });
     state.draft = '';
     $('chat-input').value = '';
-    state.building = true;
+
+    // Gate BEFORE building — never stop a build mid-way.
+    if (!EZ.canAfford(state.ledger, est.usd)) {
+      var remaining = EZ.remainingUSD(state.ledger);
+      state.messages.push({
+        role: 'ai',
+        text: "Hold on — you don't have enough monthly credit for this build, so I didn't start it (better than stopping halfway). Top up or switch to a cheaper model and I'll run it.",
+        blocked: {
+          estUsd: est.usd, estPct: pctOfBudget(est.usd),
+          remainingUsd: remaining, remainingPct: pctOfBudget(remaining),
+          model: state.model, kind: kind, retry: t
+        }
+      });
+      renderMessages();
+      return;
+    }
+
+    state.building = est;
     renderMessages();
 
     clearTimeout(buildTimer);
     buildTimer = setTimeout(function () {
+      // Charge the actual cost (estimate with a little real-world variance).
+      var actual = est.usd * (0.85 + Math.random() * 0.3);
+      EZ.charge(state.ledger, actual);
       state.building = false;
-      state.credit = Math.min(100, state.credit + 4);
       state.messages.push({
         role: 'ai',
         text: "On it — patched that in and hot-reloaded the build. It's live on the right, give it a try.",
         meta: {
           time: (2 + Math.random() * 2).toFixed(1) + 's',
-          steps: ['Parsing your request', 'Updating game logic', 'Hot-reloading preview']
+          steps: ['Parsing your request', 'Updating game logic', 'Hot-reloading preview'],
+          cost: { usd: actual, model: state.model }
         }
       });
       renderMessages();
@@ -111,9 +183,41 @@
 
   /* ---------- credit meter ---------- */
   function updateCredit() {
-    $('credit-fill').style.width = state.credit + '%';
-    $('credit-pct').textContent = state.credit + '% used';
-    $('credit-warn').hidden = state.credit < 80;
+    var pct = EZ.pctUsed(state.ledger);
+    var remaining = EZ.remainingUSD(state.ledger);
+    $('credit-fill').style.width = pct.toFixed(1) + '%';
+    $('credit-pct').textContent = Math.round(pct) + '% used';
+    $('credit-pct').title = fmtUSD(remaining) + ' of ' + fmtUSD(state.ledger.budgetUSD) + ' left';
+    $('credit-warn').hidden = !EZ.isLow(state.ledger);
+    $('btn-topup').hidden = !EZ.isLow(state.ledger);
+  }
+
+  function topUp() {
+    EZ.topUp(state.ledger, 25);
+    updateCredit();
+  }
+
+  /* ---------- model selector ---------- */
+  function setModel(key) {
+    state.model = key;
+    $('model-seg').querySelectorAll('.model-opt').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-model') === key);
+    });
+    var build = EZ.estimate(key, 'build').usd;
+    $('model-price').textContent = '~' + fmtUSD(build) + '/build';
+  }
+
+  function buildModelSelector() {
+    var seg = $('model-seg');
+    ['opus', 'fable', 'sonnet'].forEach(function (key) {
+      var b = document.createElement('button');
+      b.className = 'model-opt';
+      b.setAttribute('data-model', key);
+      b.textContent = EZ.PRICING[key].label;
+      b.addEventListener('click', function () { setModel(key); });
+      seg.appendChild(b);
+    });
+    setModel(state.model);
   }
 
   /* ---------- score ---------- */
@@ -357,7 +461,6 @@
   }
 
   function init() {
-    // nav buttons (data-nav across all screens)
     document.querySelectorAll('[data-nav]').forEach(function (el) {
       el.addEventListener('click', function () { go(el.getAttribute('data-nav')); });
     });
@@ -365,22 +468,19 @@
       el.addEventListener('click', function () { go('gallery'); });
     });
 
-    // landing input
     $('landing-input').addEventListener('input', function (e) { state.landingDraft = e.target.value; });
     $('landing-input').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); startFromLanding(); }
     });
     $('landing-build').addEventListener('click', startFromLanding);
-    // Start building / +New game nav already routes to app; landing-build handles draft.
 
-    // chat input
     $('chat-input').addEventListener('input', function (e) { state.draft = e.target.value; });
     $('chat-input').addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     });
     $('chat-send').addEventListener('click', function () { send(); });
+    $('btn-topup').addEventListener('click', topUp);
 
-    // game controls
     $('btn-pause').addEventListener('click', function () {
       if (game) { game.paused = !game.paused; state.paused = game.paused; $('btn-pause').textContent = game.paused ? '▶' : '❚❚'; }
     });
@@ -388,6 +488,7 @@
       if (game && game.reset) { game.reset(); game.paused = false; state.paused = false; $('btn-pause').textContent = '❚❚'; }
     });
 
+    buildModelSelector();
     buildChips();
     buildGallery();
     renderMessages();

@@ -73,6 +73,7 @@
               <div class="credit-track"><div class="credit-fill" id="credit-fill" style="width:79%"></div></div>
             </div>
             <div class="credit-warn" id="credit-warn" hidden><span class="live-dot sm"></span>Running low</div>
+            <button class="btn-topup" id="btn-topup" title="Add $25 of credit">+ Top up</button>
           </div>
           <button class="btn-ghost" data-nav="gallery">Gallery</button>
           <div class="avatar">M</div>
@@ -85,6 +86,11 @@
         <div class="chat">
           <div class="messages" id="messages"></div>
           <div class="composer">
+            <div class="model-row">
+              <span class="model-label">MODEL</span>
+              <div class="model-seg" id="model-seg"></div>
+              <span class="model-price" id="model-price"></span>
+            </div>
             <div class="chips" id="suggest-chips"></div>
             <div class="composer-input">
               <input id="chat-input" placeholder="Describe your game…" autocomplete="off">
@@ -144,6 +150,7 @@
   </section>
 
 </div>
+<script src="./credit.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>
