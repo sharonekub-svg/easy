@@ -16,13 +16,12 @@
     paused: false,
     messages: [
       { role: 'ai', text: "Hey — tell me what game you want and I'll have it running on the right in seconds." },
-      { role: 'user', text: "make a neon snake game that speeds up as you grow" },
-      { role: 'ai', text: "Done. Neon Snake is live on the right — click it and use the arrow keys. Want power-ups or a high-score board next?", meta: { time: '3.2s', steps: ['Scaffolding canvas renderer', 'Wiring keyboard controls', 'Adding neon glow + scoring'], cost: { usd: EZ.estimate('opus', 'build').usd, model: 'opus' } } }
+      { role: 'user', text: "build a 3D arcade racer — chase cam, neon highway, traffic to dodge, speeds up over time" },
+      { role: 'ai', text: "Done. Apex Drift is live on the right in full 3D — click it, hold ↑ to accelerate and ←/→ to weave through traffic. Want rival AI, drift boost, or a city skyline next?", meta: { time: '11.4s', steps: ['Spinning up WebGL scene + chase camera', 'Building car, highway & neon barriers', 'Adding traffic AI, collisions & speed ramp'], cost: { usd: EZ.gameCostUSD('opus', 6), model: 'opus' } } }
     ]
   };
 
   var $ = function (id) { return document.getElementById(id); };
-  var game = null;
   var buildTimer = null;
   var thumbs = [];
   var thumbRaf = null;
@@ -328,154 +327,25 @@
     if (!thumbRaf) thumbRaf = requestAnimationFrame(drawThumbs);
   }
 
-  /* ---------- snake game ---------- */
+  /* ---------- flagship game: Apex Drift (3D) ---------- */
+  var carCtl = null;
+
   function tryInit() {
     var c = $('game-canvas');
-    if (!c || game) return;
+    if (!c || carCtl) return;
+    if (!window.EZCar) { setTimeout(tryInit, 80); return; }
     var r = c.getBoundingClientRect();
     if (r.width < 20 || r.height < 20) { setTimeout(tryInit, 60); return; }
-    initGame(c);
+    carCtl = window.EZCar.mount(c, {
+      onScore: function (s) { state.score = s; updateScore(); },
+      onBest: function (b) { state.best = b; updateScore(); }
+    });
   }
 
   function teardown() {
-    if (!game) return;
-    cancelAnimationFrame(game.raf);
-    window.removeEventListener('keydown', game.key, true);
-    window.removeEventListener('resize', game.onResize);
-    game = null;
-  }
-
-  function initGame(canvas) {
-    var ctx = canvas.getContext('2d');
-    var ACCENT = '#CB2957';
-    var CELL = 24;
-    var baseSpeed = 130;
-    var g = game = { paused: false };
-
-    var resize = function () {
-      var r = canvas.getBoundingClientRect();
-      var dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(r.width * dpr);
-      canvas.height = Math.floor(r.height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.w = r.width; g.h = r.height;
-      g.cols = Math.floor(r.width / CELL);
-      g.rows = Math.floor(r.height / CELL);
-      g.offx = (r.width - g.cols * CELL) / 2;
-      g.offy = (r.height - g.rows * CELL) / 2;
-    };
-
-    var randFood = function () {
-      var p;
-      do { p = { x: Math.floor(Math.random() * g.cols), y: Math.floor(Math.random() * g.rows) }; }
-      while (g.snake.some(function (s) { return s.x === p.x && s.y === p.y; }));
-      return p;
-    };
-
-    var reset = function () {
-      var cx = Math.floor(g.cols / 2), cy = Math.floor(g.rows / 2);
-      g.snake = [{ x: cx, y: cy }, { x: cx - 1, y: cy }, { x: cx - 2, y: cy }];
-      g.dir = { x: 1, y: 0 }; g.next = { x: 1, y: 0 };
-      g.over = false; g.speed = baseSpeed; g.acc = 0;
-      g.food = randFood();
-      state.score = 0; updateScore();
-    };
-
-    var key = function (e) {
-      var ae = document.activeElement;
-      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
-      var map = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
-        w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0], W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0] };
-      var m = map[e.key];
-      if (g.over && (e.key === ' ' || m)) { e.preventDefault(); reset(); return; }
-      if (!m) return;
-      e.preventDefault();
-      if (m[0] === -g.dir.x && m[1] === -g.dir.y) return;
-      g.next = { x: m[0], y: m[1] };
-    };
-
-    var step = function () {
-      if (g.over) return;
-      g.dir = g.next;
-      var head = { x: g.snake[0].x + g.dir.x, y: g.snake[0].y + g.dir.y };
-      if (head.x < 0 || head.y < 0 || head.x >= g.cols || head.y >= g.rows ||
-        g.snake.some(function (s) { return s.x === head.x && s.y === head.y; })) { g.over = true; return; }
-      g.snake.unshift(head);
-      if (head.x === g.food.x && head.y === g.food.y) {
-        g.food = randFood();
-        state.score += 1;
-        state.best = Math.max(state.best, state.score);
-        updateScore();
-        if (g.speed > 65) g.speed -= 4;
-      } else { g.snake.pop(); }
-    };
-
-    var rr = function (x, y, w, h, rad) {
-      ctx.beginPath();
-      ctx.moveTo(x + rad, y); ctx.arcTo(x + w, y, x + w, y + h, rad); ctx.arcTo(x + w, y + h, x, y + h, rad);
-      ctx.arcTo(x, y + h, x, y, rad); ctx.arcTo(x, y, x + w, y, rad); ctx.closePath();
-    };
-
-    var draw = function () {
-      ctx.clearRect(0, 0, g.w, g.h);
-      ctx.strokeStyle = 'rgba(238,238,238,0.045)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (var i = 0; i <= g.cols; i++) { var x = g.offx + i * CELL; ctx.moveTo(x, g.offy); ctx.lineTo(x, g.offy + g.rows * CELL); }
-      for (var j = 0; j <= g.rows; j++) { var y = g.offy + j * CELL; ctx.moveTo(g.offx, y); ctx.lineTo(g.offx + g.cols * CELL, y); }
-      ctx.stroke();
-
-      var fx = g.offx + g.food.x * CELL + CELL / 2, fy = g.offy + g.food.y * CELL + CELL / 2;
-      ctx.save();
-      ctx.shadowColor = ACCENT; ctx.shadowBlur = 20; ctx.fillStyle = ACCENT;
-      var pulse = 0.30 + Math.sin(performance.now() / 220) * 0.05;
-      ctx.beginPath(); ctx.arc(fx, fy, CELL * pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-
-      g.snake.forEach(function (sg, i) {
-        var x = g.offx + sg.x * CELL, y = g.offy + sg.y * CELL;
-        ctx.save();
-        ctx.shadowColor = ACCENT; ctx.shadowBlur = i === 0 ? 22 : 9;
-        ctx.fillStyle = i === 0 ? ACCENT : 'rgba(203,41,87,' + Math.max(0.32, 1 - i * 0.035) + ')';
-        rr(x + 2, y + 2, CELL - 4, CELL - 4, 6); ctx.fill();
-        ctx.restore();
-      });
-
-      if (g.over) {
-        ctx.fillStyle = 'rgba(0,0,0,0.72)';
-        ctx.fillRect(0, 0, g.w, g.h);
-        ctx.textAlign = 'center';
-        ctx.fillStyle = ACCENT;
-        ctx.font = "700 38px 'Martian Mono', monospace";
-        ctx.shadowColor = ACCENT; ctx.shadowBlur = 24;
-        ctx.fillText('GAME OVER', g.w / 2, g.h / 2 - 8);
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = 'rgba(238,238,238,0.6)';
-        ctx.font = "500 14px 'Space Grotesk', sans-serif";
-        ctx.fillText('press space or an arrow key to retry', g.w / 2, g.h / 2 + 28);
-      }
-      if (g.paused && !g.over) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(0, 0, g.w, g.h);
-        ctx.textAlign = 'center'; ctx.fillStyle = '#DDDDDD';
-        ctx.font = "700 26px 'Martian Mono', monospace";
-        ctx.fillText('PAUSED', g.w / 2, g.h / 2);
-      }
-    };
-
-    var frame = function (now) {
-      if (g.last == null) g.last = now;
-      var dt = now - g.last; g.last = now;
-      if (!g.paused) { g.acc += dt; while (g.acc >= g.speed) { step(); g.acc -= g.speed; } }
-      draw();
-      g.raf = requestAnimationFrame(frame);
-    };
-
-    g.reset = reset; g.key = key; g.onResize = resize;
-    resize(); reset(); draw();
-    window.addEventListener('keydown', key, true);
-    window.addEventListener('resize', resize);
-    g.raf = requestAnimationFrame(frame);
+    if (!carCtl) return;
+    carCtl.dispose();
+    carCtl = null;
   }
 
   /* ---------- wiring ---------- */
@@ -507,10 +377,10 @@
     $('btn-topup').addEventListener('click', topUp);
 
     $('btn-pause').addEventListener('click', function () {
-      if (game) { game.paused = !game.paused; state.paused = game.paused; $('btn-pause').textContent = game.paused ? '▶' : '❚❚'; }
+      if (carCtl) { var p = carCtl.togglePause(); state.paused = p; $('btn-pause').textContent = p ? '▶' : '❚❚'; }
     });
     $('btn-restart').addEventListener('click', function () {
-      if (game && game.reset) { game.reset(); game.paused = false; state.paused = false; $('btn-pause').textContent = '❚❚'; }
+      if (carCtl) { carCtl.reset(); state.paused = false; $('btn-pause').textContent = '❚❚'; }
     });
 
     buildModelSelector();
