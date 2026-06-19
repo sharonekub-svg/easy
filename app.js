@@ -24,6 +24,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var game = null;
   var buildTimer = null;
+  var thumbs = [];
+  var thumbRaf = null;
 
   function fmtUSD(v) { return '$' + v.toFixed(v < 1 ? 3 : 2); }
   function pctOfBudget(usd) { return (usd / state.ledger.budgetUSD) * 100; }
@@ -35,6 +37,7 @@
       $('screen-' + s).hidden = (s !== screen);
     });
     if (screen === 'app') { tryInit(); } else { teardown(); }
+    if (screen === 'gallery') { startThumbs(); }
   }
 
   /* ---------- chat ---------- */
@@ -267,25 +270,25 @@
     });
 
     var games = [
-      { name: 'NEON SNAKE', file: 'snake.ez', author: '@maya', plays: '12.4k', tag: 'ARCADE' },
-      { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER' },
-      { name: 'PIXEL DRIFT', file: 'drift.ez', author: '@lin', plays: '7.8k', tag: 'RACING' },
-      { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER' },
-      { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE' },
-      { name: 'LASER GRID', file: 'lasergrid.ez', author: '@sasha', plays: '4.9k', tag: 'ARCADE' },
-      { name: 'CYBER PONG', file: 'pong.ez', author: '@yui', plays: '4.1k', tag: 'CLASSIC' },
-      { name: 'MAZE NINE', file: 'maze9.ez', author: '@beck', plays: '3.7k', tag: 'MAZE' },
-      { name: 'BIT BLASTER', file: 'blaster.ez', author: '@ravi', plays: '3.0k', tag: 'SHOOTER' }
+      { name: 'NEON SNAKE', file: 'snake.ez', author: '@maya', plays: '12.4k', tag: 'ARCADE', genre: 'snake' },
+      { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER', genre: 'runner' },
+      { name: 'PIXEL DRIFT', file: 'drift.ez', author: '@lin', plays: '7.8k', tag: 'RACING', genre: 'racing' },
+      { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER', genre: 'shooter' },
+      { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE', genre: 'blocks' },
+      { name: 'LASER GRID', file: 'lasergrid.ez', author: '@sasha', plays: '4.9k', tag: 'ARCADE', genre: 'grid' },
+      { name: 'CYBER PONG', file: 'pong.ez', author: '@yui', plays: '4.1k', tag: 'CLASSIC', genre: 'pong' },
+      { name: 'MAZE NINE', file: 'maze9.ez', author: '@beck', plays: '3.7k', tag: 'MAZE', genre: 'maze' },
+      { name: 'BIT BLASTER', file: 'blaster.ez', author: '@ravi', plays: '3.0k', tag: 'SHOOTER', genre: 'shooter' }
     ];
     var grid = $('gallery-grid');
+    thumbs = [];
     games.forEach(function (g, i) {
-      var tint = (0.10 + (i % 4) * 0.06).toFixed(2);
-      var ang = 90 + (i % 3) * 25;
       var card = document.createElement('div');
       card.className = 'card';
       card.style.animationDelay = (i * 0.04) + 's';
       card.innerHTML =
-        '<div class="card-thumb" style="background:linear-gradient(135deg,rgba(203,41,87,' + tint + ') 0%,#000 72%),repeating-linear-gradient(' + ang + 'deg,rgba(238,238,238,0.05) 0 2px,transparent 2px 10px);">' +
+        '<div class="card-thumb">' +
+          '<canvas></canvas>' +
           '<div class="card-scan"></div>' +
           '<span class="card-file">' + g.file + '</span>' +
           '<span class="card-tag">' + g.tag + '</span>' +
@@ -300,7 +303,29 @@
       card.querySelector('.remix').addEventListener('click', function (e) { e.stopPropagation(); go('app'); });
       card.addEventListener('click', function () { go('app'); });
       grid.appendChild(card);
+      thumbs.push({ canvas: card.querySelector('canvas'), ctx: null, genre: g.genre, seed: (i + 1) * 2654435761 });
     });
+  }
+
+  /* ---------- gallery thumbnail animation ---------- */
+  function drawThumbs(now) {
+    if (state.screen !== 'gallery') { thumbRaf = null; return; }
+    thumbs.forEach(function (th) {
+      var c = th.canvas;
+      var r = c.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) return;
+      var dpr = window.devicePixelRatio || 1;
+      var pw = Math.floor(r.width * dpr), ph = Math.floor(r.height * dpr);
+      if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; th.ctx = null; }
+      if (!th.ctx) { th.ctx = c.getContext('2d'); }
+      th.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      window.EZArt.draw(th.ctx, r.width, r.height, th.genre, now, th.seed);
+    });
+    thumbRaf = requestAnimationFrame(drawThumbs);
+  }
+
+  function startThumbs() {
+    if (!thumbRaf) thumbRaf = requestAnimationFrame(drawThumbs);
   }
 
   /* ---------- snake game ---------- */
