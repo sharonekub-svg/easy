@@ -137,6 +137,7 @@ button{font-family:inherit}
 .preview-head{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-bottom:1px solid rgba(238,238,238,0.08);flex:none;}
 .preview-title{display:flex;align-items:center;gap:14px;}
 .game-name{font-family:'Martian Mono';font-size:13px;font-weight:700;letter-spacing:1.5px;color:#DDDDDD;}
+.badge-3d{font-family:'Martian Mono';font-size:9px;font-weight:700;letter-spacing:1px;color:#000;background:#CB2957;padding:2px 6px;border-radius:5px;}
 .live{display:inline-flex;align-items:center;gap:6px;font-family:'Martian Mono';font-size:10px;font-weight:600;letter-spacing:1px;color:#CB2957;}
 .live .live-dot{box-shadow:0 0 8px #CB2957}
 .preview-stats{display:flex;align-items:center;gap:18px;}
