@@ -9,7 +9,7 @@
     landingDraft: '',
     draft: '',
     building: false,
-    model: 'fable',                      // always default to the strongest model
+    model: 'opus',                       // locked to Opus 4.8 (not user-changeable)
     currentGame: 'apex',                 // which game the live preview is running
     ledger: EZ.makeLedger(50, 21.00),    // $50 monthly budget, $21 already used
     score: 0,
@@ -120,16 +120,7 @@
     top.addEventListener('click', function () { topUp(); if (b.retry) send(b.retry); });
     actions.appendChild(top);
 
-    if (b.model !== 'sonnet') {
-      var cheaper = EZ.estimate('sonnet', b.kind);
-      if (EZ.canAfford(state.ledger, cheaper.usd)) {
-        var sw = document.createElement('button');
-        sw.className = 'blocked-btn ghost';
-        sw.textContent = 'Use Sonnet 4.6 (' + fmtUSD(cheaper.usd) + ')';
-        sw.addEventListener('click', function () { setModel('sonnet'); if (b.retry) send(b.retry); });
-        actions.appendChild(sw);
-      }
-    }
+    // Model is locked to Opus 4.8 — no cheaper-model switch is offered.
     return card;
   }
 
@@ -211,16 +202,16 @@
   }
 
   function buildModelSelector() {
+    // Model is locked to Opus 4.8 — render a single, non-interactive chip.
     var seg = $('model-seg');
-    ['opus', 'fable', 'sonnet'].forEach(function (key) {
-      var b = document.createElement('button');
-      b.className = 'model-opt';
-      b.setAttribute('data-model', key);
-      b.textContent = EZ.PRICING[key].label;
-      b.addEventListener('click', function () { setModel(key); });
-      seg.appendChild(b);
-    });
-    setModel(state.model);
+    seg.innerHTML = '';
+    var b = document.createElement('span');
+    b.className = 'model-opt active locked';
+    b.setAttribute('data-model', 'opus');
+    b.setAttribute('title', 'Locked to Opus 4.8');
+    b.innerHTML = '<span class="model-lock" aria-hidden="true">🔒</span>' + EZ.PRICING.opus.label;
+    seg.appendChild(b);
+    setModel('opus');
   }
 
   /* ---------- score ---------- */

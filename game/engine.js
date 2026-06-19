@@ -85,10 +85,14 @@ export class Engine {
     const q = this.quality;
 
     if (q === 'high') {
-      const ssao = new SSAOPass(scene, camera, size.x, size.y);
-      ssao.kernelRadius = 0.6; ssao.minDistance = 0.002; ssao.maxDistance = 0.08;
-      ssao.output = SSAOPass.OUTPUT.Default;
-      composer.addPass(ssao); this.ssao = ssao;
+      // SSAO is the heaviest pass and the most likely to fail on odd drivers —
+      // never let it take the whole game down, just skip it if it throws.
+      try {
+        const ssao = new SSAOPass(scene, camera, size.x, size.y);
+        ssao.kernelRadius = 0.6; ssao.minDistance = 0.002; ssao.maxDistance = 0.08;
+        ssao.output = SSAOPass.OUTPUT.Default;
+        composer.addPass(ssao); this.ssao = ssao;
+      } catch (e) { console.warn('[chameleon] SSAO unavailable, skipping', e); }
     }
     if (q === 'high' || q === 'medium') {
       const bloom = new UnrealBloomPass(size, 0.55, 0.7, 0.85);
