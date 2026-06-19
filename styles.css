@@ -7,6 +7,7 @@ body{color:#DDDDDD;font-family:'Space Grotesk',system-ui,sans-serif;-webkit-font
 ::-webkit-scrollbar-thumb{background:rgba(238,238,238,0.14);border-radius:9px}
 ::-webkit-scrollbar-track{background:transparent}
 button{font-family:inherit}
+[hidden]{display:none !important}
 
 @keyframes ezGlow{0%,100%{text-shadow:0 0 30px rgba(203,41,87,0.45)}50%{text-shadow:0 0 60px rgba(203,41,87,0.85)}}
 @keyframes ezGrid{from{background-position:0 0}to{background-position:80px 80px}}
@@ -163,8 +164,9 @@ button{font-family:inherit}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:22px;}
 .card{border:1px solid rgba(238,238,238,0.09);border-radius:18px;overflow:hidden;background:rgba(238,238,238,0.02);cursor:pointer;transition:transform 0.25s ease,border-color 0.25s ease,box-shadow 0.25s ease;animation:ezRise 0.5s ease both;}
 .card:hover{transform:translateY(-6px);border-color:rgba(203,41,87,0.5);box-shadow:0 24px 50px rgba(0,0,0,0.5);}
-.card-thumb{position:relative;aspect-ratio:4/3;overflow:hidden;}
-.card-scan{position:absolute;inset:0;height:24px;background:linear-gradient(rgba(203,41,87,0.5),transparent);animation:ezScan 3.4s linear infinite;mix-blend-mode:screen;}
+.card-thumb{position:relative;aspect-ratio:4/3;overflow:hidden;background:#000;}
+.card-thumb canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.card-scan{position:absolute;inset:0;height:24px;background:linear-gradient(rgba(203,41,87,0.5),transparent);animation:ezScan 3.4s linear infinite;mix-blend-mode:screen;pointer-events:none;}
 .card-file{position:absolute;left:16px;bottom:14px;font-family:'Martian Mono';font-size:11px;font-weight:600;color:rgba(238,238,238,0.55);}
 .card-tag{position:absolute;right:14px;top:14px;font-family:'Martian Mono';font-size:9px;font-weight:600;letter-spacing:1px;color:#CB2957;background:rgba(0,0,0,0.55);border:1px solid rgba(203,41,87,0.4);padding:4px 9px;border-radius:7px;}
 .card-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px;}
