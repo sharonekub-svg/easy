@@ -197,6 +197,22 @@ export function stars(base, star) {
   });
   return { map: m, bump: null };
 }
+// Andy's room signature: light-blue wall with fluffy white clouds
+export function clouds(base) {
+  const key = 'clouds' + base;
+  const m = make(key, 256, (g, s) => {
+    g.fillStyle = hex(base == null ? 0x7ec3e6 : base); g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 9; i++) {
+      const cx = Math.random() * s, cy = Math.random() * s, sc = 0.7 + Math.random() * 0.8;
+      g.fillStyle = 'rgba(255,255,255,0.92)';
+      for (const p of [[0, 0, 22], [18, 4, 17], [-18, 4, 17], [9, -8, 15], [-9, -8, 15], [0, 6, 24]]) {
+        g.beginPath(); g.ellipse(cx + p[0] * sc, cy + p[1] * sc, p[2] * sc, p[2] * sc * 0.8, 0, 0, 7); g.fill();
+      }
+    }
+    noise(g, s, 0.015);
+  });
+  return { map: m, bump: null };
+}
 export function playmat() {
   const key = 'playmat';
   const m = make(key, 512, (g, s) => {

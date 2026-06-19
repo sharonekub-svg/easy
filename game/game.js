@@ -73,7 +73,7 @@ export class Game {
     this._clearTimers();
     // show the loading screen instantly, then build on the next frames so it paints
     this.state = 'loading';
-    this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : mapId === 'toyroom' ? 'THE TOY ROOM…' : 'THE MANSION…'));
+    this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : mapId === 'toyroom' ? "ANDY'S ROOM…" : 'THE MANSION…'));
     clearTimeout(this._buildT);
     this._buildT = setTimeout(() => this._doStartRound(mode, mapId, tutorial), 50);
   }

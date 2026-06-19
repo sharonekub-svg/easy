@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as TEX from './textures.js';
+import { placeCast, luxoBall } from './toys.js';
 
 function rng(seed) { let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
 
@@ -507,62 +508,72 @@ function mobile(b, x, y, z) {
   return { update(dt, t) { grp.rotation.y = t * 0.4; hang.forEach((s, i) => s.position.y = -1 + Math.sin(t * 1.5 + i) * 0.1); } };
 }
 
+// office swivel chair (Andy's desk chair)
+function officeChair(b, x, z, color) {
+  b.cyl(0.7, 0.18, 0x2a2a30, x, 0.18, z, { collide: false, cast: false });            // star base
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; const w = b.cyl(0.14, 0.12, 0x1a1a20, x + Math.cos(a) * 0.7, 0.14, z + Math.sin(a) * 0.7, { collide: false, cast: false, seg: 10 }); w.rotation.x = Math.PI / 2; }
+  b.cyl(0.12, 1.4, 0x33333a, x, 0.9, z, { collide: true, rough: 0.4, metal: 0.3 });   // post
+  b.box(1.4, 0.3, 1.4, color, x, 1.6, z, { collide: false, rough: 0.6 });             // seat
+  b.box(1.4, 1.6, 0.3, color, x, 2.4, z - 0.55, { collide: false, rough: 0.6 });      // back
+}
+
 function buildToyRoom() {
   const b = new Builder();
   const r = rng(99);
   const X = 26, Z = 22, WALL_H = 9;
   const _anim = [];
-  const wallT = TEX.stars(0xbfe0f0, 0xffffff);
+  const wallT = TEX.clouds(0x7ec3e6); // Andy's room: blue sky walls with white clouds
 
-  // floor (warm wood) + big play mat in the centre
-  b.plane(X * 2, Z * 2, 0xc89b6a, 0, 0, 0, { tex: TEX.wood(0xc89b6a, 10), rep: 10, rough: 0.5 });
-  b.plane(18, 14, 0x6fbf4a, 0, 0.02, 2, { tex: TEX.playmat(), rep: 1, rough: 0.95 });
+  // warm wood floor
+  b.plane(X * 2, Z * 2, 0xc89b6a, 0, 0, 0, { tex: TEX.wood(0xc89b6a, 10), rep: 12, rough: 0.5 });
+  // play mat near the centre (camo cover)
+  b.plane(14, 11, 0x6fbf4a, 4, 0.02, 4, { tex: TEX.playmat(), rep: 1, rough: 0.95 });
 
-  // walls (tall, pastel with stars) + skirting
-  b.box(X * 2, WALL_H, 0.6, 0xbfe0f0, 0, WALL_H / 2, -Z, { rough: 0.9, tex: wallT, rep: 6 });
-  b.box(X * 2, WALL_H, 0.6, 0xbfe0f0, 0, WALL_H / 2, Z, { rough: 0.9, tex: wallT, rep: 6 });
-  b.box(0.6, WALL_H, Z * 2, 0xbfe0f0, -X, WALL_H / 2, 0, { rough: 0.9, tex: wallT, rep: 6 });
-  b.box(0.6, WALL_H, Z * 2, 0xbfe0f0, X, WALL_H / 2, 0, { rough: 0.9, tex: wallT, rep: 6 });
-  [[-Z, true], [Z, true]].forEach((p) => b.box(X * 2, 0.6, 0.7, 0xffffff, 0, 0.3, p[0], { collide: false, cast: false, rough: 0.6 }));
+  // cloud walls + white skirting
+  b.box(X * 2, WALL_H, 0.6, 0x9fd0ec, 0, WALL_H / 2, -Z, { rough: 0.9, tex: wallT, rep: 6 });
+  b.box(X * 2, WALL_H, 0.6, 0x9fd0ec, 0, WALL_H / 2, Z, { rough: 0.9, tex: wallT, rep: 6 });
+  b.box(0.6, WALL_H, Z * 2, 0x9fd0ec, -X, WALL_H / 2, 0, { rough: 0.9, tex: wallT, rep: 6 });
+  b.box(0.6, WALL_H, Z * 2, 0x9fd0ec, X, WALL_H / 2, 0, { rough: 0.9, tex: wallT, rep: 6 });
+  [[-Z], [Z]].forEach((p) => b.box(X * 2, 0.7, 0.7, 0xffffff, 0, 0.35, p[0], { collide: false, cast: false, rough: 0.6 }));
+  [[-X], [X]].forEach((p) => b.box(0.7, 0.7, Z * 2, 0xffffff, p[0], 0.35, 0, { collide: false, cast: false, rough: 0.6 }));
 
-  // furniture around the room
-  bigBed(b, -16, -13, 0x4f9dd8);
-  bookshelfBig(b, 22, -10, Math.PI / 2);
-  bigDesk(b, 17, 14);
-  b.box(2.4, 2.4, 2.4, 0x8a6a3a, 14, 1.2, 11, { collide: true }); // desk chair seat block (giant stool)
-  toyChest(b, -18, 12);
-  dresserBig(b, 0, -19, 0);
-  rocketToy(b, 9, -14);                                  // landmark
-  beachBall(b, -3, 14);
-  crayonPile(b, 6, 6);
-  crayonPile(b, -10, -2);
-  // nightstand + alarm clock by the bed
-  b.box(2.6, 2.6, 2.6, 0x9b6a44, -22, 1.3, -16, { rough: 0.5 });
-  b.box(1, 0.7, 0.5, 0xe23b3b, -22, 2.9, -16, { collide: false, cast: false, emissive: 0x3a0a0a, emissiveI: 0.3 });
+  // ---- ANDY'S FURNITURE ----
+  bigBed(b, -16, -13, 0x3f7fd0);                         // Andy's bed
+  b.box(2.6, 3.0, 2.6, 0x9b6a44, -22.5, 1.5, -16.5, { rough: 0.5, tex: TEX.wood(0x9b6a44, 3), rep: 2 }); // bedside table
+  b.box(1, 0.7, 0.5, 0xe23b3b, -22.5, 3.2, -16.5, { collide: false, cast: false, emissive: 0x3a0a0a, emissiveI: 0.3 }); // alarm clock
+  bigDesk(b, 18, 15);                                    // kids wooden desk
+  officeChair(b, 13, 14, 0xd5352b);                      // office chair
+  bookshelfBig(b, 22, -8, Math.PI / 2);                  // BLADET wall shelf
+  toyChest(b, -19, 13);                                  // toy chest
+  dresserBig(b, -2, -19.5, 0);                           // dresser
+  // floor lamp (real warm light) + desk lamp handled in apply()
+  b.cyl(0.16, 5, 0x6a5038, 22, 2.5, 16, { collide: true, rough: 0.5 });
+  b.cyl(0.9, 0.9, 0xf0e2c0, 22, 5.2, 16, { r2: 0.6, collide: false, cast: false, emissive: 0xffe7b0, emissiveI: 0.5 });
 
-  // posters + a big window on the walls
-  poster(b, -6, 5.5, -21.6, 0, 4, 5, 0xe6b93c);
-  poster(b, 4, 5.5, -21.6, 0, 4, 5, 0x4fbf5a);
-  poster(b, -21.6, 5.5, 4, Math.PI / 2, 4, 5, 0xe2739a);
-  bigWindow(b, 21.6, 5.0, -2, -Math.PI / 2, 7, 6);
+  // window + posters on the cloud walls
+  bigWindow(b, 0, 5.2, -21.6, 0, 8, 6);
+  poster(b, -10, 5.2, -21.6, 0, 3.4, 4.4, 0xe6b93c);
+  poster(b, 10, 5.2, -21.6, 0, 3.4, 4.4, 0x4fbf5a);
+  poster(b, -21.6, 5.2, 8, Math.PI / 2, 3.4, 4.4, 0xe2739a);
 
-  // hanging mobile over the bed + a toy train looping on the mat
+  // hanging mobile over the bed
   _anim.push(mobile(b, -16, 8.4, -13));
-  _anim.push(toyTrain(b, 0, 3, 6.5));
 
-  // a SEA of colourful building blocks — the main camouflage cover
-  const blockCols = [0xe23b3b, 0x2f7fd8, 0xf2c33c, 0x4fbf5a, 0xf08a3d, 0x9b5bd0, 0xe87fb0, 0x36b3a8];
-  const blockSpots = [
-    [-8, 4], [-6, 7], [10, 2], [12, 5], [4, -4], [-2, -6], [7, -7], [-12, 6], [14, -3],
-    [2, 9], [-5, 11], [18, 6], [-14, 0], [16, -8], [0, -10], [-9, -9], [11, 9], [5, 13]
-  ];
-  blockSpots.forEach((p, i) => { if (Math.hypot(p[0], p[1] - 2) < 3) return; toyBlock(b, p[0], p[1], blockCols[i % blockCols.length], 1.3 + r() * 0.9, r() * Math.PI); });
-  // a few stacked-block towers (cover + verticality)
-  [[-6, -12], [13, 12], [20, 2]].forEach((p) => { for (let k = 0; k < 3; k++) toyBlock(b, p[0] + k * 0.2, p[1], blockCols[(k + p[0]) & 7], 1.5, k * 0.4); });
+  // ---- THE LUXO / PIXAR BALL (iconic landmark) ----
+  luxoBall(b, 4, 0, 1.6);
+
+  // ---- THE FULL TOY STORY CAST (also colourful camo cover) ----
+  placeCast(b);
+
+  // a handful of building blocks + crayons fill the gaps (extra camo colours)
+  const blockCols = [0xe23b3b, 0x2f7fd8, 0xf2c33c, 0x4fbf5a, 0xf08a3d, 0x9b5bd0, 0xe87fb0];
+  const blockSpots = [[-9, -8], [11, -8], [-13, 7], [17, 2], [-4, 12], [9, 12], [2, -11]];
+  blockSpots.forEach((p, i) => toyBlock(b, p[0], p[1], blockCols[i % blockCols.length], 1.2 + r() * 0.7, r() * Math.PI));
+  crayonPile(b, -7, 6); crayonPile(b, 13, -2);
 
   const spawns = [
-    new THREE.Vector3(-10, 0, 4), new THREE.Vector3(8, 0, 6), new THREE.Vector3(-4, 0, -6),
-    new THREE.Vector3(14, 0, -4), new THREE.Vector3(-14, 0, -6), new THREE.Vector3(4, 0, 12)
+    new THREE.Vector3(-10, 0, 4), new THREE.Vector3(8, 0, -4), new THREE.Vector3(-4, 0, -6),
+    new THREE.Vector3(16, 0, 8), new THREE.Vector3(-13, 0, -6), new THREE.Vector3(2, 0, 12)
   ];
 
   return finalize(b, {
@@ -577,7 +588,8 @@ function buildToyRoom() {
       sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.near = 1; sun.shadow.camera.far = 100;
       sun.shadow.camera.left = -34; sun.shadow.camera.right = 34; sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
       scene.add(sun); scene.add(sun.target); this._lights.push(sun, sun.target); this.sun = sun;
-      const warm = new THREE.PointLight(0xfff0d0, 14, 30, 2); warm.position.set(17, 7, 14); scene.add(warm); this._lights.push(warm); // desk lamp
+      const floorLamp = new THREE.PointLight(0xfff0d0, 16, 32, 2); floorLamp.position.set(22, 5.2, 16); scene.add(floorLamp); this._lights.push(floorLamp);
+      const deskLamp = new THREE.PointLight(0xfff2d8, 9, 18, 2); deskLamp.position.set(18, 5, 15); scene.add(deskLamp); this._lights.push(deskLamp);
       const pmrem = new THREE.PMREMGenerator(renderer); this._env = pmrem.fromScene(new RoomEnvironment(), 0.04);
       scene.environment = this._env.texture; pmrem.dispose();
       this._motes = dustMotes(scene, 0, 3, 0, 36); this._anim2 = this._motes.update;
@@ -628,7 +640,7 @@ function finalize(b, props) {
 }
 
 export const MAPS = [
-  { id: 'toyroom', name: 'Toy Room', mood: 'Giant playroom', accent: '#f2c33c', build: buildToyRoom },
+  { id: 'toyroom', name: "Andy's Room", mood: 'Toy Story bedroom', accent: '#f2c33c', build: buildToyRoom },
   { id: 'mansion', name: 'The Mansion', mood: 'Cozy indoor', accent: '#c98f86', build: buildMansion },
   { id: 'garden', name: 'Sunset Garden', mood: 'Bright outdoor', accent: '#6cbf4a', build: buildGarden }
 ];

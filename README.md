@@ -27,11 +27,15 @@ scene and stay still to vanish from the hunter. Built as clean ES modules:
 - `game/audio.js` — fully synthesised music + reverb + SFX (no asset downloads)
 - `game/chameleon.js` — rounded avatar, smooth colour-morph, blink/tongue idles,
   pose + jump squash/stretch, movement lean
-- `game/maps.js` — swappable maps. Toy Room (a giant Toy Story-style bedroom of
-  oversized furniture, building blocks, crayons, a looping toy train and a
-  hanging mobile — you play a tiny toy chameleon), The Mansion (grand-hall
-  landmark, themed rooms, fireplace, chandelier) and Sunset Garden
-- `game/textures.js` — procedural textures incl. play-mat, blanket stripes, star walls
+- `game/maps.js` — swappable maps. Andy's Room (the Toy Story bedroom: cloud
+  wallpaper, Andy's bed, kids desk + office chair, bookshelf, window, lamps and
+  the full cast as toys), The Mansion and Sunset Garden
+- `game/toys.js` — procedural recreations of the Toy Story cast: Buzz, Woody,
+  Jessie & Bullseye, Rex, Hamm, Slinky, Mr. Potato Head, Lenny, the Aliens,
+  Lotso, RC and the Luxo Ball. Modelled after the object set in
+  github.com/yasseraboelsaad/Toy-Story-room-simulation (Unity); its binary models
+  can't load in a static web build, so each is rebuilt from primitives.
+- `game/textures.js` — procedural textures incl. cloud wallpaper, play-mat, stripes
 - `game/entities.js` — shared world physics/LOS/camera-collision + hunter & hider AI
 - `game/fx.js` — paint-splash, poof, dust, noise rings, camera shake
 - `game/ui.js` — menus, loading screen, HUD, HSV colour wheel, stamina, mini-map, mobile
