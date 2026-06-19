@@ -209,7 +209,7 @@
     b.className = 'model-opt active locked';
     b.setAttribute('data-model', 'opus');
     b.setAttribute('title', 'Locked to Opus 4.8');
-    b.innerHTML = '<span class="model-lock" aria-hidden="true">🔒</span>' + EZ.PRICING.opus.label;
+    b.innerHTML = '<svg class="model-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' + EZ.PRICING.opus.label;
     seg.appendChild(b);
     setModel('opus');
   }

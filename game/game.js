@@ -27,7 +27,8 @@ export class Game {
     this.best = parseFloat(localStorage.getItem('mc_best') || '0') || 0;
 
     this.state = 'menu';
-    this.yaw = 0; this.pitch = 0.55; this.camDist = 8.5; this.fov = 52; this.camera.fov = 52;
+    this.yaw = 0; this.pitch = 0.42; this.camDist = 8.0; this.fov = 56; this.camera.fov = 56;
+    this.camShoulder = 0.55;
     // movement physics state
     this._vx = 0; this._vz = 0; this._vy = 0; this._onGround = true; this._slide = 0; this._slideDir = { x: 0, z: 0 };
     this._stamina = 1; this._clock = 0; this._camPos = new THREE.Vector3(); this._camLook = new THREE.Vector3();
@@ -96,10 +97,10 @@ export class Game {
     this.fx = new FX(this.scene, this.camera);
 
     // reset movement physics
-    this._vx = this._vz = this._vy = 0; this._onGround = true; this._slide = 0; this._stamina = 1; this._clock = 0;
+    this._vx = this._vz = this._vy = 0; this._onGround = true; this._slide = 0; this._stamina = 1; this._clock = 0; this._noiseBoost = 0;
 
     // camera behind the player, aligned to its spawn heading
-    this.yaw = 0; this.pitch = 0.55; this.fov = 52; this.camera.fov = 52; this.camera.updateProjectionMatrix();
+    this.yaw = 0; this.pitch = 0.42; this.fov = 56; this.camera.fov = 56; this.camera.updateProjectionMatrix();
     this._focusPoint(this._camLook);
     this._snapCamera();
 
@@ -184,7 +185,7 @@ export class Game {
 
   jump() {
     if (!this.player || !this._onGround) return;
-    this._onGround = false; this._vy = 7.2;
+    this._onGround = false; this._vy = 7.2; this._noiseBoost = 0.9;
     this.player.cham.hop(); this.audio.jump();
     this.fx.noiseRing(this.player.pos, 0.7);
   }
@@ -193,7 +194,7 @@ export class Game {
     const speedNow = Math.hypot(this._vx, this._vz);
     // sprinting + moving fast -> slide; otherwise crouch
     if (this._onGround && speedNow > 6 && this._slide <= 0 && this.player.cham.pose === 'stand') {
-      this._slide = 0.55; const n = speedNow || 1; this._slideDir = { x: this._vx / n, z: this._vz / n };
+      this._slide = 0.55; const n = speedNow || 1; this._slideDir = { x: this._vx / n, z: this._vz / n }; this._noiseBoost = 1;
       this.setPose('crouch'); this.audio.slide(); this.fx.dust(this.player.pos); this.fx.noiseRing(this.player.pos, 0.9);
     } else this.setPose(this.player.cham.pose === 'crouch' ? 'stand' : 'crouch');
   }
@@ -228,17 +229,19 @@ export class Game {
   }
 
   /* ---------------- camera ---------------- */
-  // focus point: a bit above the player, nudged ahead in the travel direction
+  // focus point: chest height, nudged ahead in travel, with a slight shoulder offset
   _focusPoint(out) {
     const p = this.player.pos;
-    out.set(p.x + this._vx * 0.12, p.y + 1.5, p.z + this._vz * 0.12);
+    const sx = Math.cos(this.yaw) * this.camShoulder, sz = -Math.sin(this.yaw) * this.camShoulder;
+    out.set(p.x + this._vx * 0.1 + sx, p.y + 1.35, p.z + this._vz * 0.1 + sz);
     return out;
   }
-  // desired (unclamped) camera position behind/above the player
+  // desired (unclamped) camera position behind/above the player, over the shoulder
   _camDesired(out) {
     const p = this.player.pos;
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), ch = Math.cos(this.pitch);
-    out.set(p.x - fx * this.camDist * ch, p.y + 1.5 + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch);
+    const sx = Math.cos(this.yaw) * this.camShoulder, sz = -Math.sin(this.yaw) * this.camShoulder;
+    out.set(p.x - fx * this.camDist * ch + sx, p.y + 1.35 + Math.sin(this.pitch) * this.camDist, p.z - fz * this.camDist * ch + sz);
     return out;
   }
   // collision-resolved camera position (never clips through walls)
@@ -274,7 +277,7 @@ export class Game {
   update(dt) {
     const inp = this.input.sample();
     // look
-    this.yaw -= inp.look.x; this.pitch = Math.max(0.12, Math.min(1.15, this.pitch + inp.look.y));
+    this.yaw -= inp.look.x; this.pitch = Math.max(0.06, Math.min(1.05, this.pitch + inp.look.y));
 
     // movement basis from camera yaw
     const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
@@ -285,25 +288,26 @@ export class Game {
     const pose = this.player.cham.pose;
     const p = this.player.pos;
 
-    // sprint + stamina
+    // sprint + stamina (long-lasting, generous regen so it stays fun)
     const wantSprint = this.input.run && inMag > 0.1 && this._stamina > 0.05 && pose === 'stand' && this._slide <= 0;
-    this._stamina = Math.max(0, Math.min(1, this._stamina + (wantSprint ? -dt * 0.35 : dt * 0.22)));
-    let maxSpeed = wantSprint ? 9.6 : 6.0;
-    if (pose === 'crouch') maxSpeed = 3.2; else if (pose === 'curl' || pose === 'lie') maxSpeed = 0;
+    this._stamina = Math.max(0, Math.min(1, this._stamina + (wantSprint ? -dt * 0.16 : dt * 0.3)));
+    let maxSpeed = wantSprint ? 11.0 : 6.8;
+    if (pose === 'crouch') maxSpeed = 3.4; else if (pose === 'curl' || pose === 'lie') maxSpeed = 0;
     if (inMag > 0.05 && (pose === 'curl' || pose === 'lie')) { this.setPose('stand'); }
 
-    // desired horizontal velocity, reached with smooth accel / decel
+    // desired horizontal velocity, reached with snappy accel and quick stop
     let desX = 0, desZ = 0;
     if (inMag > 0.02 && maxSpeed > 0) { const n = Math.hypot(wx, wz) || 1; desX = wx / n * maxSpeed * inMag; desZ = wz / n * maxSpeed * inMag; }
     if (this._slide > 0) {
       // slide: committed momentum, minimal steering, low profile
       this._slide -= dt;
-      desX = this._slideDir.x * (this._slide * 18 + 2); desZ = this._slideDir.z * (this._slide * 18 + 2);
+      desX = this._slideDir.x * (this._slide * 20 + 2); desZ = this._slideDir.z * (this._slide * 20 + 2);
       const accelS = Math.min(1, dt * 3);
       this._vx += (desX - this._vx) * accelS; this._vz += (desZ - this._vz) * accelS;
       if (this._slide <= 0 && pose === 'crouch') this.setPose('stand');
     } else {
-      const accel = (inMag > 0.02 ? (this._onGround ? 13 : 4) : (this._onGround ? 11 : 3));
+      // accelerate fast, decelerate even faster (responsive, no float/ice feel)
+      const accel = (inMag > 0.02 ? (this._onGround ? 19 : 6) : (this._onGround ? 22 : 4));
       const k = Math.min(1, dt * accel);
       this._vx += (desX - this._vx) * k; this._vz += (desZ - this._vz) * k;
     }
@@ -313,7 +317,11 @@ export class Game {
     // integrate horizontal
     p.x += this._vx * dt; p.z += this._vz * dt;
     this.world.clampBounds(p, 0.6); this.world.collide(p, 0.6);
-    if (moving) this.player.heading = Math.atan2(this._vx, this._vz);
+    if (moving) {
+      const target = Math.atan2(this._vx, this._vz);
+      let d = target - this.player.heading; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      this.player.heading += d * Math.min(1, dt * 16); // responsive but not snappy
+    }
 
     // vertical (jump) integration
     if (!this._onGround) {
@@ -344,6 +352,10 @@ export class Game {
     if (sil !== 'tall') blend = Math.min(1, blend + 0.14);
     blend = Math.max(0, Math.min(1, blend));
     this.player.exposure = Math.max(0.04, 1 - blend * 0.92);
+    // noise the hunter can HEAR: movement + a decaying spike from jumps/slides
+    this._noiseBoost = Math.max(0, (this._noiseBoost || 0) - dt * 1.6);
+    this.player._noise = Math.max(moving ? motion * (this.input.run ? 1 : 0.7) : 0, this._noiseBoost);
+    this.player._moving = moving;
 
     // animate player chameleon (eyes glance toward nearest hunter)
     const hunter = this._nearestHunter();
@@ -358,8 +370,6 @@ export class Game {
     // animated map detail (fireplace flicker, chandelier sway, dust, fountain)
     this._clock += dt;
     if (this.map && this.map.update) this.map.update(dt, this._clock);
-    // stamina HUD
-    this.ui.setStamina && this.ui.setStamina(this._stamina, wantSprint);
 
     // camo HUD state
     let state = 'HIDDEN';
@@ -449,7 +459,7 @@ export class Game {
       this.camera.lookAt(this._camLook);
       // dynamic FOV: widen on sprint / slide for a sense of speed
       const speedNow = Math.hypot(this._vx, this._vz);
-      const fovTarget = 52 + (this.input.run && speedNow > 6 ? 8 : 0) + (this._slide > 0 ? 6 : 0);
+      const fovTarget = 56 + (this.input.run && speedNow > 6 ? 8 : 0) + (this._slide > 0 ? 6 : 0);
       this.fov += (fovTarget - this.fov) * Math.min(1, dt * 6);
       if (Math.abs(this.camera.fov - this.fov) > 0.01) { this.camera.fov = this.fov; this.camera.updateProjectionMatrix(); }
       if (this.map && this.map.sun) this.map.sun.target.position.copy(this.player.pos);

@@ -111,7 +111,7 @@ button{font-family:inherit}
 .model-opt.active{background:#CB2957;color:#000;}
 .model-opt.locked{cursor:default;display:inline-flex;align-items:center;gap:5px;}
 .model-opt.locked:hover{color:#000;}
-.model-lock{font-size:9px;line-height:1;opacity:0.75;}
+.model-lock{width:11px;height:11px;opacity:0.8;}
 .model-price{font-family:'Martian Mono';font-size:10px;font-weight:600;color:rgba(238,238,238,0.45);margin-left:auto;}
 
 .btn-topup{font-size:11px;font-weight:600;color:#000;background:#CB2957;border:none;padding:7px 12px;border-radius:9px;cursor:pointer;box-shadow:0 0 16px rgba(203,41,87,0.4);}

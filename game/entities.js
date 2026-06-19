@@ -129,6 +129,7 @@ export class EntityManager {
     this.mode = 'classic';
     this.events = [];
     this._tmp = new THREE.Vector3();
+    this._tmp2 = new THREE.Vector3();
   }
   add(a) { this.agents.push(a); this.world.scene.add(a.group); return a; }
   clear() { this.agents.forEach((a) => { if (a.group.parent) a.group.parent.remove(a.group); a.cham.dispose(); }); this.agents = []; this.player = null; }
@@ -143,7 +144,7 @@ export class EntityManager {
 
     // AI hiders
     const palette = [0x7ec850, 0xe6b93c, 0x4f9dd8, 0xe0739a, 0x9b6fd0, 0x55c0a0];
-    const n = hiderCount || 4;
+    const n = hiderCount == null ? 4 : hiderCount;
     for (let i = 0; i < n; i++) {
       const a = new Agent({ color: palette[i % palette.length], team: 'hider', name: 'Hider ' + (i + 1) });
       const sp = spawns[i % spawns.length] || mapDesc.hunterSpawn;
@@ -163,109 +164,163 @@ export class EntityManager {
   hunters() { return this.agents.filter((a) => a.team === 'hunter' && a.alive); }
 
   // hunter perception: can a hunter currently see target?
+  // Sight scales with the target's exposure, the hunter's alertness, and a slow
+  // difficulty ramp; FOV widens when the hunter is alert.
   sees(hunter, target) {
     if (!target.alive) return false;
     const d = this._tmp.copy(target.pos).sub(hunter.pos); const dist = d.length();
-    const range = 22 * (0.25 + target.exposure * 0.95);
-    if (dist > Math.max(3, range)) return false;
-    // FOV cone (hunters have ~130° vision)
-    const fwd = Math.atan2(Math.sin(hunter.heading), Math.cos(hunter.heading));
+    const alert = hunter._alert || 0;
+    const range = (19 + alert * 9) * (0.26 + target.exposure * 0.92) * (this._diff || 1);
+    if (dist > Math.max(2.6, range)) return false;
     const ang = Math.atan2(d.x, d.z);
     let diff = Math.abs(ang - hunter.heading); diff = Math.min(diff, Math.PI * 2 - diff);
-    if (dist > 3 && diff > 1.25) return false;
+    const fov = 1.05 + alert * 0.55; // ~120deg, wider (~180) when alert
+    if (dist > 2.6 && diff > fov) return false;
     if (this.world.losBlocked(hunter.pos, target.pos)) return false;
     return true;
   }
 
   update(dt, time) {
     this.events.length = 0;
-    const world = this.world;
-    // update AI hiders
+    this._diff = 1 + Math.min(0.45, (time || 0) / 200); // slow difficulty ramp
     for (const a of this.agents) {
       if (a.isPlayer || a.team === 'hunter') continue;
       this._updateHider(a, dt);
     }
-    // update hunters
     for (const h of this.hunters()) this._updateHunter(h, dt, time);
-    // sync meshes + chameleon animation done by caller for player; AI here
     return this.events;
   }
 
-  _moveAgent(a, dir, speed, dt, radius) {
-    if (dir.lengthSq() > 0.0001) {
+  // smooth-turning movement with simple stuck detection
+  _moveAgent(a, dir, speed, dt, radius, turnRate) {
+    if (dir.lengthSq() > 0.0001 && speed > 0.001) {
       dir.normalize();
+      const px = a.pos.x, pz = a.pos.z;
       a.pos.x += dir.x * speed * dt; a.pos.z += dir.z * speed * dt;
       this.world.clampBounds(a.pos, radius); this.world.collide(a.pos, radius);
-      a.heading = Math.atan2(dir.x, dir.z); a._moving = true;
+      const target = Math.atan2(dir.x, dir.z);
+      let d = target - a.heading; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      a.heading += d * Math.min(1, dt * (turnRate || 7));
+      const moved = Math.hypot(a.pos.x - px, a.pos.z - pz);
+      a._moving = moved > 0.004;
+      if (moved < speed * dt * 0.35) { a._stuck = (a._stuck || 0) + dt; if (!a._stuckSide) a._stuckSide = Math.random() < 0.5 ? 1 : -1; }
+      else { a._stuck = 0; a._stuckSide = 0; }
     } else a._moving = false;
   }
 
+  _nearestCover(pos) {
+    let best = null, bd = 12;
+    for (let i = 0; i < this.world.colliders.length; i++) {
+      const c = this.world.colliders[i]; if ((c.h || 1) < 0.7) continue;
+      const d = Math.hypot(pos.x - c.x, pos.z - c.z);
+      if (d > 0.6 && d < bd) { best = c; bd = d; }
+    }
+    if (!best) return null;
+    this._coverVec = this._coverVec || new THREE.Vector3();
+    this._coverVec.set(best.x, 0, best.z); return this._coverVec;
+  }
+  _pickPatrol(h) {
+    const sp = this.world.map && this.world.map.spawns;
+    if (sp && sp.length && Math.random() < 0.7) { const s = sp[(Math.random() * sp.length) | 0]; h._wp.set(s.x + (Math.random() - 0.5) * 4, 0, s.z + (Math.random() - 0.5) * 4); }
+    else { const b = this.world.bounds; h._wp.set(b.minX + Math.random() * (b.maxX - b.minX), 0, b.minZ + Math.random() * (b.maxZ - b.minZ)); }
+  }
+  _separate(a, dir, list, radius, weight) {
+    for (const o of list) { if (o === a || o.dormant || !o.alive) continue; const dx = a.pos.x - o.pos.x, dz = a.pos.z - o.pos.z; const dd = Math.hypot(dx, dz); if (dd > 0.001 && dd < radius) { dir.x += dx / dd * weight; dir.z += dz / dd * weight; } }
+  }
+
   _updateHider(a, dt) {
-    const world = this.world; const hunter = this.hunterAgent;
-    // perceive nearest hunter
+    const world = this.world;
     let danger = null, dDist = Infinity;
     for (const h of this.hunters()) { if (h.dormant) continue; const dd = h.pos.distanceTo(a.pos); if (dd < dDist) { dDist = dd; danger = h; } }
     const dir = this._tmp.set(0, 0, 0);
-    let speed = 3.2, fleeing = false;
-    if (danger && dDist < 11 && !world.losBlocked(danger.pos, a.pos)) {
-      // flee away from hunter toward cover
-      dir.copy(a.pos).sub(danger.pos); dir.y = 0; fleeing = true; speed = 6.2;
+    let speed = 3.0, fleeing = false;
+    const scared = danger && dDist < 10 && (!world.losBlocked(danger.pos, a.pos) || (danger._alert || 0) > 0.4);
+    if (scared) {
+      fleeing = true; speed = 6.6;
+      dir.copy(a.pos).sub(danger.pos); dir.y = 0; if (dir.lengthSq() > 0) dir.normalize();
+      const cover = this._nearestCover(a.pos);
+      if (cover) { const cd = this._tmp2.copy(cover).sub(a.pos); cd.y = 0; if (cd.lengthSq() > 0) { cd.normalize(); dir.x += cd.x * 0.7; dir.z += cd.z * 0.7; } }
       a.cham.setPose('stand');
     } else {
-      // wander to waypoints, occasionally hide & crouch
       a._wpT -= dt;
       if (a._wpT <= 0 || a._newWaypoint || a.pos.distanceTo(a._wp) < 1.5) {
-        const b = world.bounds;
-        a._wp.set(b.minX + Math.random() * (b.maxX - b.minX), 0, b.minZ + Math.random() * (b.maxZ - b.minZ));
-        a._wpT = 3 + Math.random() * 4; a._newWaypoint = false;
-        a._willHide = Math.random() < 0.5;
+        const b = world.bounds; a._wp.set(b.minX + Math.random() * (b.maxX - b.minX), 0, b.minZ + Math.random() * (b.maxZ - b.minZ));
+        a._wpT = 3 + Math.random() * 4; a._newWaypoint = false; a._willHide = Math.random() < 0.55;
       }
       if (a._willHide && a.pos.distanceTo(a._wp) < 3) { speed = 0; a.cham.setPose(Math.random() < 0.5 ? 'crouch' : 'curl'); }
       else { dir.copy(a._wp).sub(a.pos); dir.y = 0; a.cham.setPose('stand'); }
     }
-    this._moveAgent(a, dir, speed, dt, 0.6);
+    this._separate(a, dir, this.agents.filter((x) => x.team === 'hider' && !x.isPlayer), 2.2, 0.5);
+    if ((a._stuck || 0) > 0.4 && speed > 0) { const ang = Math.atan2(dir.x, dir.z) + (a._stuckSide || 1) * 1.3; dir.set(Math.sin(ang), 0, Math.cos(ang)); a._wpT = 0; }
+    this._moveAgent(a, dir, speed, dt, 0.6, 9);
 
-    // AI camouflage: periodically eyedrop nearest surface colour
     a._eyeT -= dt;
     if (a._eyeT <= 0) { a._eyeT = 1.5 + Math.random() * 2.5; world.surfaceColorAt(a.pos, a._ref); a.cham.setColorTarget(a._ref); a.cham.pulseAbsorb(); }
-
-    // exposure = how visible (mismatch + motion); used by hunter perception
     world.surfaceColorAt(a.pos, a._ref);
     const match = Math.max(0, 1 - colorDist(a.cham.getColor(), a._ref) / 0.5);
     let blend = match; if (a._moving) blend *= 0.35; if (a.cham.silhouette() !== 'tall') blend = Math.min(1, blend + 0.12);
     a.exposure = Math.max(0.05, 1 - blend * 0.9);
+    a._noise = a._moving ? (fleeing ? 0.8 : 0.4) : 0;
 
-    a.syncMesh();
-    a.cham.update(dt, { moving: a._moving });
+    a.syncMesh(); a.cham.update(dt, { moving: a._moving });
     if (a._caughtFx > 0) a._caughtFx -= dt;
   }
 
   _updateHunter(h, dt, time) {
     if (h.dormant) { h.cham.update(dt, {}); h.syncMesh(); return; }
-    const world = this.world;
-    // pick best visible target (player + hiders)
     const targets = [this.player].concat(this.hiders()).filter((t) => t && t.alive && t !== h);
+    // SIGHT: nearest visible target
     let prey = null, pd = Infinity;
     for (const t of targets) { if (this.sees(h, t)) { const d = t.pos.distanceTo(h.pos); if (d < pd) { pd = d; prey = t; } } }
-
-    const dir = this._tmp.set(0, 0, 0); let speed = 5.2;
-    if (prey) { h._chase = prey; h._lost = 0; dir.copy(prey.pos).sub(h.pos); dir.y = 0; speed = 8.2; }
-    else if (h._chase && h._lost < 2.2) { h._lost += dt; dir.copy(h._chase.pos).sub(h.pos); dir.y = 0; speed = 7; if (h.pos.distanceTo(h._chase.pos) < 1.5) { h._lost = 3; } }
-    else {
-      h._chase = null;
-      h._wpT -= dt;
-      if (h._wpT <= 0 || h.pos.distanceTo(h._wp) < 2) { const b = world.bounds; h._wp.set(b.minX + Math.random() * (b.maxX - b.minX), 0, b.minZ + Math.random() * (b.maxZ - b.minZ)); h._wpT = 3 + Math.random() * 3; }
-      dir.copy(h._wp).sub(h.pos); dir.y = 0;
-    }
-    this._moveAgent(h, dir, speed, dt, 0.6);
-
-    // catch detection
-    for (const t of targets) {
-      if (t.pos.distanceTo(h.pos) < 1.5 && t.alive && this.sees(h, t)) {
-        this._catch(t, h);
+    // HEARING: the single strongest nearby mover leaves a last-known position
+    // (even through walls). Picking the best stimulus avoids thrashing between
+    // several noise sources.
+    if (!prey) {
+      let bestT = null, bestScore = 0;
+      for (const t of targets) {
+        const noise = t._noise || 0; if (noise < 0.12) continue;
+        const d = t.pos.distanceTo(h.pos), range = 6 + noise * 11;
+        if (d < range) { const score = noise * (1 - d / range); if (score > bestScore) { bestScore = score; bestT = t; } }
+      }
+      if (bestT) {
+        h._lastKnown = (h._lastKnown || new THREE.Vector3()).copy(bestT.pos);
+        h._search = Math.max(h._search || 0, 2.6); h._alert = Math.min(1, (h._alert || 0) + 0.4);
       }
     }
-    h.syncMesh(); h.cham.update(dt, { moving: h._moving });
+
+    const dir = this._tmp.set(0, 0, 0); let speed = 4.8, turn = 7, scanning = false;
+    if (prey) {
+      h._chase = prey; h._lost = 0; h._alert = 1; (h._lastKnown = h._lastKnown || new THREE.Vector3()).copy(prey.pos);
+      dir.copy(prey.pos).sub(h.pos); dir.y = 0; speed = 8.6 * this._diff; turn = 10;
+    } else if (h._chase && h._lost < 2.0 && h._lastKnown) {
+      h._lost += dt; dir.copy(h._lastKnown).sub(h.pos); dir.y = 0; speed = 7.2; turn = 8;
+      if (h.pos.distanceTo(h._lastKnown) < 1.5) { h._lost = 2.1; h._search = Math.max(h._search || 0, 2.2); }
+    } else if ((h._search || 0) > 0) {
+      h._search -= dt; h._chase = null;
+      if (h._lastKnown && h.pos.distanceTo(h._lastKnown) > 1.5) { dir.copy(h._lastKnown).sub(h.pos); dir.y = 0; speed = 6.4; turn = 7; }
+      else { speed = 0; scanning = true; h.heading += dt * 2.4; } // arrived: scan around
+    } else {
+      h._chase = null; h._alert = Math.max(0, (h._alert || 0) - dt * 0.3);
+      h._wpT -= dt;
+      if (h._wpT <= 0 || h.pos.distanceTo(h._wp) < 2 || (h._stuck || 0) > 0.5) { this._pickPatrol(h); h._wpT = 3 + Math.random() * 3; h._stuck = 0; }
+      dir.copy(h._wp).sub(h.pos); dir.y = 0; speed = 4.8;
+    }
+    if (speed > 0) {
+      this._separate(h, dir, this.hunters(), 2.8, 0.7); // hunters spread out
+      if ((h._stuck || 0) > 0.4) { const ang = Math.atan2(dir.x, dir.z) + (h._stuckSide || 1) * 1.2; dir.set(Math.sin(ang), 0, Math.cos(ang)); }
+    }
+    this._moveAgent(h, dir, speed, dt, 0.6, turn);
+
+    // eyes track the prey / last-known point
+    let lookAt = null;
+    const focus = prey ? prey.pos : h._lastKnown;
+    if (focus) { const a = Math.atan2(focus.x - h.pos.x, focus.z - h.pos.z) - h.heading; lookAt = Math.max(-0.6, Math.min(0.6, Math.sin(a))); }
+
+    // CATCH: seen, or a moving target point-blank
+    for (const t of targets) {
+      if (t.alive && t.pos.distanceTo(h.pos) < 1.55 && (this.sees(h, t) || (t._noise || 0) > 0.25)) this._catch(t, h);
+    }
+    h.syncMesh(); h.cham.update(dt, { moving: h._moving || scanning, lookAt });
   }
 
   _catch(target, hunter) {

@@ -7,10 +7,19 @@
  */
 import { MAPS } from './maps.js';
 
+const ICONS = {
+  classic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  infection: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3M4.5 4.5l2 2M17.5 17.5l2 2M19.5 4.5l-2 2M6.5 17.5l-2 2"/></svg>',
+  double: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v5h-5"/></svg>',
+  house: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>',
+  coin: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9" opacity="0.25"/><circle cx="12" cy="12" r="6"/></svg>',
+  dropper: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v8"/><circle cx="12" cy="15" r="4"/></svg>'
+};
+
 const MODES = [
-  { id: 'classic', name: 'Classic', desc: 'One hunter, many hiders. Survive the hunt.', icon: '🦎' },
-  { id: 'infection', name: 'Infection', desc: 'Caught hiders join the hunters. Be the last.', icon: '🧬' },
-  { id: 'double', name: 'Double', desc: 'Everyone hides… then everyone hunts.', icon: '🔁' }
+  { id: 'classic', name: 'Classic', desc: 'One hunter, many hiders. Survive the hunt.', icon: ICONS.classic },
+  { id: 'infection', name: 'Infection', desc: 'Caught hiders join the hunters. Be the last.', icon: ICONS.infection },
+  { id: 'double', name: 'Double', desc: 'Everyone hides, then everyone hunts.', icon: ICONS.double }
 ];
 
 function hsvToRgb(h, s, v) {
@@ -36,7 +45,10 @@ const CSS = `
 .mc-cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:760px;}
 .mc-card{width:210px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:20px;cursor:pointer;transition:transform .2s,border-color .2s,background .2s;text-align:left;}
 .mc-card:hover{transform:translateY(-4px);border-color:rgba(126,224,138,.6);background:rgba(126,224,138,.08);}
-.mc-card .ic{font-size:34px;}
+.mc-card .ic{width:36px;height:36px;color:#7ee08a;}
+.mc-card .ic svg{width:100%;height:100%;}
+.mc-eye-ic{display:inline-flex;width:13px;height:13px;vertical-align:-2px;margin-right:5px;}
+.mc-eye-ic svg{width:100%;height:100%;}
 .mc-card h3{margin:8px 0 4px;font-family:'Martian Mono';font-size:16px;}
 .mc-card p{margin:0;font-size:12.5px;color:rgba(255,255,255,.6);line-height:1.45;}
 .mc-card .mood{margin-top:10px;font-family:'Martian Mono';font-size:10px;letter-spacing:1px;color:#7ee08a;}
@@ -57,8 +69,8 @@ const CSS = `
 .mc-camo-lbl{font-family:'Martian Mono';font-size:11px;font-weight:800;letter-spacing:2px;text-shadow:0 1px 4px rgba(0,0,0,.6);}
 .mc-camo-track{width:100%;height:9px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.3);border-radius:999px;overflow:hidden;}
 .mc-camo-fill{height:100%;width:0;background:#2ec4a6;transition:width .12s,background .25s;}
-.mc-stam-track{width:70%;height:4px;margin-top:3px;background:rgba(0,0,0,.4);border-radius:999px;overflow:hidden;}
-.mc-stam-fill{height:100%;width:100%;background:#7ad3ff;transition:width .1s,background .2s;}
+.mc-coin{display:inline-flex;width:13px;height:13px;color:#ffd06a;}
+.mc-coin svg{width:100%;height:100%;}
 .mc-arrow{position:absolute;top:50%;left:50%;width:120px;height:120px;margin:-60px 0 0 -60px;pointer-events:none;transition:opacity .2s;opacity:0;}
 .mc-arrow svg{width:100%;height:100%;}
 .mc-mini{position:absolute;top:14px;right:14px;width:128px;height:128px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(12,10,16,.55);overflow:hidden;}
@@ -189,7 +201,7 @@ export class UI {
     s.appendChild(this._el('mc-sub', 'Pick your hiding ground.'));
     const cards = this._el('mc-cards', '');
     MAPS.forEach((m) => {
-      const c = this._el('mc-card', `<div class="ic">🏠</div><h3>${m.name}</h3><p>${m.mood}</p><div class="mood" style="color:${m.accent}">${m.mood.toUpperCase()}</div>`);
+      const c = this._el('mc-card', `<div class="ic">${ICONS.house}</div><h3>${m.name}</h3><p>${m.mood}</p><div class="mood" style="color:${m.accent}">${m.mood.toUpperCase()}</div>`);
       c.onclick = () => { this.cb.click && this.cb.click(); this.cb.start && this.cb.start(this._mode || 'classic', m.id, false); };
       cards.appendChild(c);
     });
@@ -205,13 +217,13 @@ export class UI {
     const top = this._el('mc-top', '');
     this.phaseEl = this._el('mc-pill', '<span class="mc-phase">HIDE</span>');
     this.timerEl = this._el('mc-pill timer', 'TIME <span class="v">0:20</span>');
-    this.coinEl = this._el('mc-pill', '◎ <span class="v">0</span>');
+    this.coinEl = this._el('mc-pill', '<span class="mc-coin">' + ICONS.coin + '</span><span class="v">0</span>');
     this.bestEl = this._el('mc-pill', 'BEST <span class="v">0s</span>');
     top.append(this.phaseEl, this.timerEl, this.coinEl, this.bestEl);
     h.appendChild(top);
 
-    // camo + stamina
-    const camo = this._el('mc-camo', '<div class="mc-camo-lbl" id="mc-camo-lbl">HIDDEN</div><div class="mc-camo-track"><div class="mc-camo-fill" id="mc-camo-fill"></div></div><div class="mc-stam-track"><div class="mc-stam-fill" id="mc-stam-fill"></div></div>');
+    // camo meter
+    const camo = this._el('mc-camo', '<div class="mc-camo-lbl" id="mc-camo-lbl">HIDDEN</div><div class="mc-camo-track"><div class="mc-camo-fill" id="mc-camo-fill"></div></div>');
     h.appendChild(camo);
 
     // hunter arrow
@@ -236,7 +248,7 @@ export class UI {
     this.bright = document.createElement('input'); this.bright.type = 'range'; this.bright.min = 0; this.bright.max = 100; this.bright.value = 80; this.bright.className = 'mc-bright';
     const colcol = this._el('mc-colcol', '');
     this.swatch = this._el('mc-swatch', '');
-    this.eyeBtn = document.createElement('button'); this.eyeBtn.className = 'mc-eye'; this.eyeBtn.textContent = '⊙ EYEDROP (E)';
+    this.eyeBtn = document.createElement('button'); this.eyeBtn.className = 'mc-eye'; this.eyeBtn.innerHTML = '<span class="mc-eye-ic">' + ICONS.dropper + '</span>EYEDROP · E';
     colcol.append(this.swatch, this.eyeBtn);
     tools.append(wheelWrap, this.bright, colcol);
     h.appendChild(tools);
@@ -328,11 +340,6 @@ export class UI {
   setCoins(n) { this.coinEl.querySelector('.v').textContent = n; }
   setBest(s) { this.bestEl.querySelector('.v').textContent = Math.floor(s) + 's'; }
   setActivePose(name) { for (const k in this.poseBtns) this.poseBtns[k].classList.toggle('active', k === name); }
-  setStamina(v, sprinting) {
-    const f = document.getElementById('mc-stam-fill'); if (!f) return;
-    f.style.width = Math.round(v * 100) + '%';
-    f.style.background = v < 0.2 ? '#e8483b' : (sprinting ? '#ffd98a' : '#7ad3ff');
-  }
 
   setCamo(state, value) {
     const fill = document.getElementById('mc-camo-fill'), lbl = document.getElementById('mc-camo-lbl');
@@ -392,7 +399,7 @@ export class UI {
     this.resultTitle.style.webkitBackgroundClip = 'text'; this.resultTitle.style.backgroundClip = 'text';
     this.resultSub.textContent = data.subtitle || '';
     this.resultStats.innerHTML = '';
-    [['SURVIVED', Math.floor(data.survived) + 's'], ['COINS', '◎ ' + data.coins], ['BEST', Math.floor(data.best) + 's']].forEach((st) => {
+    [['SURVIVED', Math.floor(data.survived) + 's'], ['COINS', data.coins], ['BEST', Math.floor(data.best) + 's']].forEach((st) => {
       this.resultStats.appendChild(this._el('mc-rstat', `<div class="n">${st[1]}</div><div class="l">${st[0]}</div>`));
     });
     this.showScreen('results');
