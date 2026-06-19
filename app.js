@@ -241,7 +241,7 @@
 
   function buildChips() {
     var ex = $('example-chips');
-    ['a neon snake that speeds up', 'an endless space runner', 'a tiny platformer', 'brick breaker with power-ups']
+    ['a 3D racer with neon city traffic', 'meccha chameleon — blend-in hide & seek', 'a roblox-style obby', 'an endless space runner']
       .forEach(function (t) {
         ex.appendChild(chip(t, function () {
           state.landingDraft = t;
@@ -273,7 +273,7 @@
     // (apex, hideout); hue gives every tile its own colour.
     var games = [
       { name: 'APEX DRIFT', file: 'apexdrift.ez', author: '@you', plays: '18.2k', tag: '3D · RACER', genre: 'racing', game: 'apex', hue: 0 },
-      { name: 'BLOCK HIDEOUT', file: 'hideout.ez', author: '@you', plays: '14.7k', tag: '3D · HIDE & SEEK', genre: 'maze', game: 'hideout', hue: 110 },
+      { name: 'MECCHA CHAMELEON', file: 'meccha.ez', author: '@you', plays: '21.6k', tag: '3D · BLEND & SEEK', genre: 'maze', game: 'hideout', hue: 110 },
       { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER', genre: 'runner', game: 'apex', hue: 205 },
       { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER', genre: 'shooter', game: 'hideout', hue: 40 },
       { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE', genre: 'blocks', game: 'hideout', hue: 268 },
@@ -338,8 +338,8 @@
 
   // each game's metadata + download artifact
   var GAME_META = {
-    apex:    { name: 'Apex Drift',   tag: 'NEON RACER', download: './dist/apex-drift.html' },
-    hideout: { name: 'Block Hideout', tag: 'HIDE & SEEK', download: null }
+    apex:    { name: 'Apex Drift',       tag: 'NEON RACER', download: './dist/apex-drift.html' },
+    hideout: { name: 'Meccha Chameleon', tag: 'BLEND HIDE & SEEK', download: null }
   };
 
   function applyGameMeta() {
