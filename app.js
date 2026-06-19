@@ -338,14 +338,17 @@
 
   // each game's metadata + download artifact
   var GAME_META = {
-    apex:    { name: 'Apex Drift',       tag: 'NEON RACER', download: './dist/apex-drift.html' },
-    hideout: { name: 'Meccha Chameleon', tag: 'BLEND HIDE & SEEK', download: null }
+    apex:    { name: 'Apex Drift',       tag: 'NEON RACER', download: './dist/apex-drift.html',
+               hint: 'click the preview · ↑ accelerate · ← → steer' },
+    hideout: { name: 'Meccha Chameleon', tag: 'BLEND HIDE & SEEK', download: null,
+               hint: 'click · WASD move · E eyedrop colour · match the scene to vanish' }
   };
 
   function applyGameMeta() {
     var m = GAME_META[state.currentGame] || GAME_META.apex;
     $('project-name').textContent = m.name;
     $('game-name').textContent = m.name.toUpperCase();
+    if ($('game-hint')) $('game-hint').textContent = m.hint;
   }
 
   function tryInit() {
