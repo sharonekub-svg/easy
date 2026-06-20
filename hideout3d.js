@@ -319,7 +319,50 @@ var GradeShader = {
         g.scale.setScalar(1.12);
       }
       g.setColor = function (c) { g.bodyParts.forEach(function (pp) { pp.mat.color.copy(c); }); };
+      g.anim = makeAnimator(g);
       return g;
+    }
+
+    // multi-state animator: blends idle / walk / crouch with an "alert" overlay,
+    // adding squash-&-stretch, gait, and tail follow-through (real authored
+    // motion, eased between states — not a single raw sine wave).
+    function makeAnimator(g) {
+      var torsoBaseY = g.torso.mesh.position.y, torsoBaseScale = g.torso.mesh.scale.clone();
+      var headBaseY = g.head.mesh.position.y, tail = g.tail;
+      var w = { idle: 1, walk: 0, crouch: 0 }, alert = 0, want = 'idle', wantAlert = 0;
+      function ease(cur, target, dt, rate) { return cur + (target - cur) * Math.min(1, dt * rate); }
+      return {
+        set: function (name) { want = name; },
+        setAlert: function (a) { wantAlert = a; },
+        update: function (dt, t) {
+          w.idle = ease(w.idle, want === 'idle' ? 1 : 0, dt, 8);
+          w.walk = ease(w.walk, want === 'walk' ? 1 : 0, dt, 8);
+          w.crouch = ease(w.crouch, want === 'crouch' ? 1 : 0, dt, 8);
+          alert = ease(alert, wantAlert, dt, 6);
+          var phase = t * 10;
+          // gait: alternating diagonal leg swing, fading with the walk weight
+          var s = Math.sin(phase) * w.walk * 0.6, splay = w.crouch * 0.45;
+          g.limbs[0].mesh.rotation.x = s; g.limbs[1].mesh.rotation.x = -s;
+          g.limbs[2].mesh.rotation.x = -s; g.limbs[3].mesh.rotation.x = s;
+          g.limbs.forEach(function (l, i) { l.mesh.rotation.z = splay * ((i % 2 === 0) ? -1 : 1); });
+          // body: bounce on footfalls (walk), breathing (idle), squash-&-stretch
+          var bounce = w.walk * Math.abs(Math.sin(phase)) * 0.06;
+          var breath = w.idle * Math.sin(t * 2) * 0.03;
+          g.torso.mesh.position.y = torsoBaseY + bounce + alert * 0.15;
+          g.torso.mesh.scale.set(
+            torsoBaseScale.x * (1 + w.crouch * 0.2 - bounce * 0.5),
+            torsoBaseScale.y * (1 - w.crouch * 0.28 + breath - bounce * 0.3),
+            torsoBaseScale.z * (1 + bounce * 0.3));
+          g.torso.mesh.rotation.x = -alert * 0.35;            // rears up when alert
+          g.head.mesh.position.y = headBaseY + alert * 0.2 + bounce;
+          // tail follow-through (lags the body) + lift when alert
+          var amp = 0.18 * (0.4 + w.walk + w.idle * 0.3) + alert * 0.25;
+          for (var i = 0; i < tail.length; i++) {
+            tail[i].mesh.rotation.y = Math.sin(phase * 0.4 - i * 0.5) * amp * (i + 1) / tail.length;
+            tail[i].mesh.rotation.x = alert * 0.2 * (i + 1) / tail.length;
+          }
+        }
+      };
     }
 
     var player = avatar(0xffffff, false); scene.add(player);
@@ -362,12 +405,6 @@ var GradeShader = {
         }
       }
     }
-    function bob(g, moving, t) {
-      var sw = moving ? Math.sin(t * 10) * 0.5 : 0;
-      if (g.limbs) { g.limbs[0].mesh.rotation.x = sw; g.limbs[1].mesh.rotation.x = -sw; g.limbs[2].mesh.rotation.x = -sw; g.limbs[3].mesh.rotation.x = sw; }
-      if (g.tail) { for (var i = 0; i < g.tail.length; i++) g.tail[i].mesh.rotation.y = Math.sin(t * 4 - i * 0.5) * 0.18 * (i + 1) / g.tail.length; }
-      if (g.head) g.head.mesh.position.y = 1.55 + (moving ? Math.sin(t * 10) * 0.03 : 0);
-    }
     function lookEyes(g, target) {
       if (!g.eyes) return;
       g.eyes.forEach(function (e) {
@@ -409,7 +446,8 @@ var GradeShader = {
       clampArena(player.position); collideBlocks(player.position, 0.6);
       if (len > 0) player.rotation.y = Math.atan2(mx, mz);
       player.position.y = crouch ? -0.45 : 0;
-      bob(player, len > 0, time);
+      player.anim.set(crouch ? 'crouch' : (len > 0 ? 'walk' : 'idle'));
+      player.anim.update(dt, time);
       lookEyes(player, seeker.position);
 
       // footstep audio timed to gait
@@ -442,7 +480,8 @@ var GradeShader = {
         clampArena(seeker.position); collideBlocks(seeker.position, 0.6);
         seeker.rotation.y = Math.atan2(sd.x, sd.z);
       }
-      bob(seeker, true, time * 1.1);
+      seeker.anim.set('walk'); seeker.anim.setAlert(seek.mode === 'chase' ? 1 : 0);
+      seeker.anim.update(dt, time * 1.1);
       lookEyes(seeker, player.position);
 
       // proximity heartbeat: rises as the hunter closes in
