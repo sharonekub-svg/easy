@@ -273,6 +273,52 @@ var GradeShader = {
       scene.add(crate); blocks.push(crate);
     }
 
+    // ---- navmesh-style A* pathfinding over a coarse grid of the arena ----
+    var CELL = 2.0, GN = Math.ceil((ARENA * 2) / CELL);
+    var grid = new Uint8Array(GN * GN);           // 0 free, 1 blocked
+    function cellCenter(cx, cz) { return new THREE.Vector3((cx + 0.5) * CELL - ARENA, 0, (cz + 0.5) * CELL - ARENA); }
+    function worldToCell(x, z) { return [Math.max(0, Math.min(GN - 1, Math.floor((x + ARENA) / CELL))), Math.max(0, Math.min(GN - 1, Math.floor((z + ARENA) / CELL)))]; }
+    function blockedAt(cx, cz) { return cx < 0 || cz < 0 || cx >= GN || cz >= GN || grid[cz * GN + cx] === 1; }
+    (function bakeGrid() {
+      for (var cz = 0; cz < GN; cz++) for (var cx = 0; cx < GN; cx++) {
+        var c = cellCenter(cx, cz);
+        for (var i = 0; i < blocks.length; i++) {
+          var bx = blocks[i], hw = bx.geometry.parameters.width / 2 + 1.1, hd = bx.geometry.parameters.depth / 2 + 1.1;
+          if (Math.abs(c.x - bx.position.x) < hw && Math.abs(c.z - bx.position.z) < hd) { grid[cz * GN + cx] = 1; break; }
+        }
+      }
+    })();
+    // A*: returns a list of world-space waypoints (excluding the start cell), or []
+    var NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    function astar(sx, sz, gx, gz) {
+      if (sx === gx && sz === gz) return [];
+      var N = GN * GN, gScore = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1);
+      var closed = new Uint8Array(N), open = [], si = sz * GN + sx, gi = gz * GN + gx;
+      function h(i) { var ix = i % GN, iz = (i / GN) | 0; var dx = Math.abs(ix - gx), dz = Math.abs(iz - gz); return (dx + dz) + (Math.SQRT2 - 2) * Math.min(dx, dz); }
+      gScore[si] = 0; open.push({ i: si, f: h(si) });
+      var guard = 0;
+      while (open.length && guard++ < 6000) {
+        var bi = 0; for (var k = 1; k < open.length; k++) if (open[k].f < open[bi].f) bi = k;
+        var cur = open.splice(bi, 1)[0].i;
+        if (cur === gi) break;
+        if (closed[cur]) continue; closed[cur] = 1;
+        var cxp = cur % GN, czp = (cur / GN) | 0;
+        for (var n = 0; n < 8; n++) {
+          var nx = cxp + NB[n][0], nz = czp + NB[n][1];
+          if (blockedAt(nx, nz)) continue;
+          if (NB[n][0] && NB[n][1] && (blockedAt(cxp + NB[n][0], czp) || blockedAt(cxp, czp + NB[n][1]))) continue; // no corner cutting
+          var ni = nz * GN + nx; if (closed[ni]) continue;
+          var step = (NB[n][0] && NB[n][1]) ? Math.SQRT2 : 1;
+          var tentative = gScore[cur] + step;
+          if (tentative < gScore[ni]) { came[ni] = cur; gScore[ni] = tentative; open.push({ i: ni, f: tentative + h(ni) }); }
+        }
+      }
+      if (came[gi] === -1 && gi !== si) return [];
+      var path = [], node = gi;
+      while (node !== si && node !== -1) { path.unshift(cellCenter(node % GN, (node / GN) | 0)); node = came[node]; }
+      return path;
+    }
+
     // ---- charming chameleon avatar (rounded body, turret eyes, curled tail) ----
     function avatar(bodyCol, isSeeker) {
       var g = new THREE.Group();
@@ -377,17 +423,19 @@ var GradeShader = {
     var tmp = new THREE.Vector3();
     var time = 0, best = 0, over = false, paused = false, raf = 0, last = null;
     var crouch = false, blend = 0, stepT = 0;
-    var seek = { mode: 'roam', wp: new THREE.Vector3(), lostT: 0 };
+    var seek = { mode: 'roam', wp: new THREE.Vector3(), lostT: 0, path: [], pathT: 0 };
+    var shake = 0, hitStop = 0, fovPunch = 0;   // game-feel
+    function addShake(a) { shake = Math.max(shake, a); }
 
     function newWaypoint() { seek.wp.set(rand(-ARENA + 5, ARENA - 5), 0, rand(-ARENA + 5, ARENA - 5)); }
     function placeStart() {
       player.position.set(0, 0, 0); player.rotation.y = 0;
       seeker.position.set(0, 0, -ARENA + 6); seeker.rotation.y = 0;
-      seek.mode = 'roam'; seek.lostT = 0; newWaypoint();
+      seek.mode = 'roam'; seek.lostT = 0; seek.path = []; seek.pathT = 0; newWaypoint();
       playerColor.set(0xffffff); shownColor.set(0xffffff); player.setColor(shownColor);
       refreshPalette();
     }
-    function reset() { time = 0; over = false; paused = false; crouch = false; placeStart(); hideOverlay(); if (opts.onScore) opts.onScore(0); }
+    function reset() { time = 0; over = false; paused = false; crouch = false; shake = 0; fovPunch = 0; hitStop = 0; placeStart(); hideOverlay(); if (opts.onScore) opts.onScore(0); }
 
     function canSee(from, to) {
       tmp.copy(to).sub(from); var dist = tmp.length(); tmp.normalize();
@@ -412,6 +460,26 @@ var GradeShader = {
         e.pupil.position.x = e.base + Math.sin(ang) * 0.06;
         e.pupil.position.z = 1.18 + Math.cos(ang) * 0.04;
       });
+    }
+
+    // follow an A* path toward target, smoothing past nodes we can see directly
+    function seekerSteer(target, sSpeed, dt) {
+      seek.pathT -= dt;
+      if (seek.pathT <= 0 || seek.path.length === 0) {
+        var sc = worldToCell(seeker.position.x, seeker.position.z), gc = worldToCell(target.x, target.z);
+        seek.path = astar(sc[0], sc[1], gc[0], gc[1]);
+        seek.pathT = seek.mode === 'chase' ? 0.3 : 0.6;
+      }
+      while (seek.path.length >= 2 && canSee(seeker.position, seek.path[1])) seek.path.shift();
+      var aim = seek.path.length ? seek.path[0] : target;
+      if (seek.path.length && seeker.position.distanceTo(aim) < 1.2) { seek.path.shift(); aim = seek.path.length ? seek.path[0] : target; }
+      var sd = tmp.copy(aim).sub(seeker.position); sd.y = 0;
+      if (sd.length() > 0.001) {
+        sd.normalize();
+        seeker.position.x += sd.x * sSpeed * dt; seeker.position.z += sd.z * sSpeed * dt;
+        clampArena(seeker.position); collideBlocks(seeker.position, 0.6);
+        seeker.rotation.y = Math.atan2(sd.x, sd.z);
+      }
     }
 
     // nearest cover colour (what you should blend into); grass if in the open
@@ -467,19 +535,15 @@ var GradeShader = {
       var toP = tmp.copy(player.position).sub(seeker.position); var dP = toP.length();
       var sight = 19 * (1 - blend * 0.82);             // blended+still -> tiny sight radius
       var sees = dP < Math.max(2.6, sight) && canSee(seeker.position, player.position);
-      if (sees) { seek.mode = 'chase'; seek.lostT = 0; }
-      else if (seek.mode === 'chase') { seek.lostT += dt; if (seek.lostT > 1.5) { seek.mode = 'roam'; newWaypoint(); } }
+      if (sees) {
+        if (seek.mode !== 'chase') { addShake(0.25); fovPunch = 5; seek.path = []; } // SPOTTED! snap-zoom + jolt
+        seek.mode = 'chase'; seek.lostT = 0;
+      } else if (seek.mode === 'chase') { seek.lostT += dt; if (seek.lostT > 1.5) { seek.mode = 'roam'; newWaypoint(); seek.path = []; } }
 
       var target, sSpeed;
       if (seek.mode === 'chase') { target = player.position; sSpeed = 8.6; }
-      else { target = seek.wp; sSpeed = 5.0; if (seeker.position.distanceTo(seek.wp) < 2) newWaypoint(); }
-      var sd = tmp.copy(target).sub(seeker.position); sd.y = 0;
-      if (sd.length() > 0.001) {
-        sd.normalize();
-        seeker.position.x += sd.x * sSpeed * dt; seeker.position.z += sd.z * sSpeed * dt;
-        clampArena(seeker.position); collideBlocks(seeker.position, 0.6);
-        seeker.rotation.y = Math.atan2(sd.x, sd.z);
-      }
+      else { target = seek.wp; sSpeed = 5.0; if (seeker.position.distanceTo(seek.wp) < 2) { newWaypoint(); seek.path = []; } }
+      seekerSteer(target, sSpeed, dt);
       seeker.anim.set('walk'); seeker.anim.setAlert(seek.mode === 'chase' ? 1 : 0);
       seeker.anim.update(dt, time * 1.1);
       lookEyes(seeker, player.position);
@@ -496,7 +560,7 @@ var GradeShader = {
       if (sc > best) { best = sc; if (opts.onBest) opts.onBest(best); }
     }
 
-    function caught() { over = true; audio.sting(); audio.poof(); showOverlay('SPOTTED!', 'survived ' + Math.floor(time) + 's · press space to retry', '#d6342a'); if (opts.onState) opts.onState('over'); }
+    function caught() { over = true; hitStop = 0.13; addShake(0.7); audio.sting(); audio.poof(); showOverlay('SPOTTED!', 'survived ' + Math.floor(time) + 's · press space to retry', '#d6342a'); if (opts.onState) opts.onState('over'); }
 
     // ---- HUD: overlay + camo meter + colour palette ----
     var overlay = document.createElement('div');
@@ -614,17 +678,28 @@ var GradeShader = {
     }
     window.addEventListener('resize', resize);
 
-    var camPos = new THREE.Vector3();
-    function render() {
+    var camPos = new THREE.Vector3(), FOV = 55;
+    function render(rdt) {
       camPos.set(player.position.x, 11, player.position.z + 13);
       camera.position.lerp(camPos, 0.12);
       camera.lookAt(player.position.x, 1.5, player.position.z - 2);
+      // screen shake (decays) + spotted FOV punch (eases back)
+      if (shake > 0.001) {
+        camera.position.x += (Math.random() - 0.5) * shake;
+        camera.position.y += (Math.random() - 0.5) * shake;
+        camera.position.z += (Math.random() - 0.5) * shake;
+        shake = Math.max(0, shake - rdt * 2.2);
+      }
+      if (fovPunch > 0.01) { fovPunch = Math.max(0, fovPunch - rdt * 14); }
+      var wantFov = FOV - fovPunch;
+      if (Math.abs(camera.fov - wantFov) > 0.01) { camera.fov = wantFov; camera.updateProjectionMatrix(); }
       sun.target.position.copy(player.position);
       composer.render();
     }
     function frame(now) {
-      if (last == null) last = now; var dt = Math.min(0.05, (now - last) / 1000); last = now;
-      update(dt); render(); raf = requestAnimationFrame(frame);
+      if (last == null) last = now; var rdt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (hitStop > 0) hitStop -= rdt; else update(rdt);   // hit-stop freezes the sim, not the render
+      render(rdt); raf = requestAnimationFrame(frame);
     }
 
     resize(); reset(); refreshPalette(); raf = requestAnimationFrame(frame);
