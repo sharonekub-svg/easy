@@ -5,9 +5,27 @@
  * Registers as window.EZGames.hideout.mount(canvas, opts) -> controller.
  */
 import * as THREE from 'three';
+import { EZModels } from './models3d.js';
 
 (function (root) {
   'use strict';
+
+  // Real Poly Pizza models, vendored under assets/models/hideout/. PROPS are
+  // swapped in over the gameplay cover-crates (the crate boxes stay for
+  // collision / line-of-sight / camo-colour, just hidden); FOLIAGE is decorative
+  // scatter outside the arena. Missing files fall back to the procedural look.
+  var PROPS = [
+    { url: './assets/models/hideout/crate.glb',    rotJitter: true },
+    { url: './assets/models/hideout/barrel.glb',   rotJitter: true },
+    { url: './assets/models/hideout/mushroom.glb', rotJitter: true },
+    { url: './assets/models/hideout/rock.glb',     rotJitter: true },
+    { url: './assets/models/hideout/bush.glb',     rotJitter: true }
+  ];
+  var FOLIAGE = [
+    './assets/models/hideout/tree.glb',
+    './assets/models/hideout/pine.glb'
+  ];
+  var CREATURE = './assets/models/hideout/creature.glb';
 
   function mount(canvas, opts) {
     opts = opts || {};
@@ -66,6 +84,40 @@ import * as THREE from 'three';
       crate.castShadow = true; crate.receiveShadow = true;
       crate.userData.color = new THREE.Color(col);
       scene.add(crate); blocks.push(crate);
+
+      // Swap in a real prop model over this crate. The crate box stays in the
+      // scene (invisible) so collision, line-of-sight raycasts and the camo
+      // cover-colour all keep working; the model is purely visual and sized to
+      // the crate's footprint so sightlines still read correctly.
+      (function (crate, footprint, height) {
+        var prop = PROPS[Math.floor(Math.random() * PROPS.length)];
+        EZModels.load(prop.url, { size: Math.max(footprint, height) * 1.05, receiveShadow: true })
+          .then(function (model) {
+            if (!model) return;                       // keep procedural crate
+            crate.material.visible = false;           // hide box, keep it for logic
+            model.position.set(crate.position.x, 0, crate.position.z);
+            if (prop.rotJitter) model.rotation.y = Math.random() * Math.PI * 2;
+            scene.add(model);
+          });
+      })(crate, s, hgt);
+    }
+
+    // Decorative foliage ring outside the arena walls — pure atmosphere, never
+    // touches gameplay (placed beyond the playable bounds, no collision).
+    if (FOLIAGE.length) {
+      for (var f = 0; f < 14; f++) {
+        (function () {
+          var ang = (f / 14) * Math.PI * 2 + rand(-0.18, 0.18);
+          var rad = ARENA + rand(3, 11);
+          var url = FOLIAGE[f % FOLIAGE.length];
+          EZModels.load(url, { size: rand(5, 9), receiveShadow: false }).then(function (tree) {
+            if (!tree) return;
+            tree.position.set(Math.cos(ang) * rad, 0, Math.sin(ang) * rad);
+            tree.rotation.y = Math.random() * Math.PI * 2;
+            scene.add(tree);
+          });
+        })();
+      }
     }
 
     // ---- blocky avatar ----
@@ -91,6 +143,14 @@ import * as THREE from 'three';
 
     var player = avatar(0xffffff, 0xffffff, 0xffffff); scene.add(player);
     var seeker = avatar(0xd6342a, 0x7a1410, 0x2a0d0b); scene.add(seeker);
+    // The hunter becomes a real creature model when available (the player stays
+    // procedural — its live colour-shift IS the camouflage mechanic). The model
+    // is parented to the seeker group so it inherits its movement/turning.
+    EZModels.load(CREATURE, { size: 3.0, rotationY: Math.PI }).then(function (model) {
+      if (!model) return;
+      seeker.bodyParts.forEach(function (p) { p.mat.visible = false; });
+      seeker.add(model);
+    });
     var playerColor = new THREE.Color(0xffffff);
     function setPlayerColor(c) { playerColor.copy(c); player.setColor(c); refreshPalette(); }
 

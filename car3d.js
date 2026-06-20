@@ -11,11 +11,24 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EZModels } from './models3d.js';
 
 (function (root) {
   'use strict';
 
   var ACCENT = 0xCB2957;
+
+  // Real Poly Pizza car models, vendored under assets/models/apex/. Each entry
+  // is loaded lazily; if a file is missing the game keeps its procedural car
+  // (graceful fallback), so it always runs. size = target length in world units,
+  // rotationY orients the model so its nose points down-track (-Z).
+  var MODELS = {
+    sports: { url: './assets/models/apex/sportscar.glb', size: 4.3, rotationY: Math.PI, envMapIntensity: 1.4 },
+    sedan:  { url: './assets/models/apex/sedan.glb',     size: 4.2, rotationY: Math.PI, envMapIntensity: 1.2 },
+    suv:    { url: './assets/models/apex/suv.glb',       size: 4.5, rotationY: Math.PI, envMapIntensity: 1.2 },
+    hatch:  { url: './assets/models/apex/hatchback.glb', size: 3.9, rotationY: Math.PI, envMapIntensity: 1.2 }
+  };
+  var TRAFFIC_KEYS = ['sedan', 'suv', 'hatch'];
 
   function mount(canvas, opts) {
     opts = opts || {};
@@ -117,7 +130,26 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     }
 
     // ---- car builder ----
-    function buildCar(bodyColor, emissive, glow) {
+    // buildCar() returns a Group immediately with a procedural car inside so the
+    // game starts instantly; if a real model (cfg) is supplied it is loaded in
+    // the background and swapped in on success. The Group keeps a `.wheels` array
+    // the sim spins — empty once a GLB (with no separable wheels) takes over.
+    function buildCar(cfg, bodyColor, emissive, glow) {
+      var g = new THREE.Group();
+      var proc = buildProcCar(bodyColor, emissive, glow);
+      g.add(proc); g.wheels = proc.wheels; g.proc = proc;
+      if (cfg && cfg.url) {
+        EZModels.load(cfg.url, { size: cfg.size, rotationY: cfg.rotationY, envMapIntensity: cfg.envMapIntensity })
+          .then(function (model) {
+            if (!model || !g.proc) return;          // failed, or disposed
+            g.remove(g.proc); g.proc = null; g.wheels = [];
+            g.add(model); g.model = model;
+          });
+      }
+      return g;
+    }
+
+    function buildProcCar(bodyColor, emissive, glow) {
       var g = new THREE.Group();
       var paint = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.85, roughness: 0.28, envMapIntensity: 1.4, emissive: emissive || 0x000000, emissiveIntensity: glow ? 0.35 : 0 });
       var glass = new THREE.MeshStandardMaterial({ color: 0x0a0e16, metalness: 1.0, roughness: 0.08, envMapIntensity: 1.6 });
@@ -165,7 +197,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
       return g;
     }
 
-    var car = buildCar(ACCENT, ACCENT, true);
+    var car = buildCar(MODELS.sports, ACCENT, ACCENT, true);
     car.position.set(0, 0, 4); scene.add(car);
     var headBeam = new THREE.SpotLight(0xfff0d0, 6, 45, Math.PI / 7, 0.5, 1.2);
     headBeam.position.set(0, 1.2, -1.8); headBeam.target.position.set(0, 0, -20);
@@ -177,7 +209,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     function lanePos() { return (Math.floor(Math.random() * 3) - 1) * 2.6; }
     function resetTraffic(rc, z) { rc.position.set(lanePos(), 0, z); }
     for (var c = 0; c < 8; c++) {
-      var rc = buildCar(trafficColors[c % trafficColors.length], 0x000000, false);
+      var rc = buildCar(MODELS[TRAFFIC_KEYS[c % TRAFFIC_KEYS.length]], trafficColors[c % trafficColors.length], 0x000000, false);
       rc.scale.setScalar(0.97); resetTraffic(rc, FAR - Math.random() * 150);
       scene.add(rc); traffic.push(rc);
     }
