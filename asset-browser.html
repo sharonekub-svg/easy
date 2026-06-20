@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asset Browser — Poly Pizza + Sketchfab</title>
+<style>
+  :root{--bg:#16131c;--card:#221d2c;--line:rgba(255,255,255,.12);--accent:#7ee08a;--accent2:#43c0d8}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:#eee;font-family:system-ui,sans-serif}
+  .wrap{display:grid;grid-template-columns:1fr 420px;height:100%}
+  .left{display:flex;flex-direction:column;min-width:0}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .bar input,.bar select{background:#2c2636;border:1px solid var(--line);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px}
+  .bar input.q{flex:1;min-width:160px}
+  .bar input.key{width:160px}
+  button{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#0c0a10;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:13px}
+  button.ghost{background:#2c2636;color:#fff;border:1px solid var(--line);font-weight:600}
+  .hint{font-size:11px;color:#9a93a8;padding:6px 14px}
+  .hint b{color:#cbb}
+  .grid{flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:14px;align-content:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+  .card img{width:100%;height:110px;object-fit:cover;background:#000}
+  .card .b{padding:8px 9px;font-size:12px}
+  .card .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .m{color:#9a93a8;font-size:11px;margin:2px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .row{display:flex;gap:6px}
+  .card .row button{flex:1;padding:6px;font-size:11px}
+  .badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:#3a3346;color:#cbb;margin-right:4px;text-transform:uppercase}
+  .badge.pp{background:#3a2a14;color:#f2c33c}.badge.sf{background:#13303a;color:#43c0d8}
+  .right{border-left:1px solid var(--line);display:flex;flex-direction:column}
+  #c{flex:1;width:100%;display:block;background:#0d0b12}
+  #pinfo{padding:10px 12px;font-size:12px;border-top:1px solid var(--line);color:#9fe0a0;min-height:46px}
+  #pinfo code{background:#2c2636;padding:1px 5px;border-radius:4px;color:#fff}
+  .err{color:#ff8a8a}
+  a{color:var(--accent2)}
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <div class="bar">
+      <input class="q" id="q" placeholder="Search models… e.g. cowboy, bed, dinosaur" value="chameleon">
+      <select id="lic"><option value="">Sketchfab: any license</option><option value="cc0">CC0</option><option value="by">CC-BY</option></select>
+      <button id="go">Search</button>
+    </div>
+    <div class="bar" style="border-top:none;padding-top:0">
+      <input class="key" id="ppk" placeholder="Poly Pizza API key" type="password">
+      <input class="key" id="sfk" placeholder="Sketchfab token (optional)" type="password">
+      <button class="ghost" id="savek">Save keys</button>
+      <span class="hint">keys stay in your browser only</span>
+    </div>
+    <div class="hint">
+      Get keys (free, ~1 min): <b>Poly Pizza</b> → poly.pizza/api · <b>Sketchfab</b> → sketchfab.com/settings/password → API.
+      Poly Pizza gives a direct <code>.glb</code> (click <b>Preview</b>). Sketchfab needs the token to fetch a download (a zip) — use <b>Open</b> to grab it there.
+    </div>
+    <div id="errs" class="hint err"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="right">
+    <canvas id="c"></canvas>
+    <div id="pinfo">Preview a Poly Pizza model to see it here. Drag to orbit, scroll to zoom.</div>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { searchPolyPizza, searchSketchfab, sketchfabDownload } from './game/assetSearch.js';
+
+// ---- keys (localStorage) ----
+const $ = (id) => document.getElementById(id);
+$('ppk').value = localStorage.getItem('pp_key') || '';
+$('sfk').value = localStorage.getItem('sf_key') || '';
+$('savek').onclick = () => { localStorage.setItem('pp_key', $('ppk').value.trim()); localStorage.setItem('sf_key', $('sfk').value.trim()); flash('keys saved'); };
+function flash(t){ $('pinfo').textContent = t; }
+
+// ---- 3D preview ----
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0d0b12);
+const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 2000); camera.position.set(2, 1.5, 3);
+const controls = new OrbitControls(camera, canvas); controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.1));
+const dir = new THREE.DirectionalLight(0xfff4e0, 2.0); dir.position.set(4, 8, 5); scene.add(dir);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 48), new THREE.MeshStandardMaterial({ color: 0x2a2636, roughness: 1 })); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const draco = new DRACOLoader().setDecoderPath('./vendor/draco/');
+const loader = new GLTFLoader().setDRACOLoader(draco);
+let current = null;
+function preview(url, label) {
+  flash('loading ' + label + '…'); $('pinfo').classList.remove('err');
+  loader.load(url, (g) => {
+    if (current) scene.remove(current); current = g.scene; scene.add(current);
+    const box = new THREE.Box3().setFromObject(current), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    current.position.sub(c); current.position.y += size.y / 2;
+    let tris = 0; current.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; const gg = o.geometry; tris += (gg.index ? gg.index.count : gg.attributes.position.count) / 3; } });
+    const md = Math.max(size.x, size.y, size.z) || 1; camera.position.set(md * 1.4, md, md * 1.8); controls.target.set(0, size.y / 2, 0); controls.update();
+    $('pinfo').innerHTML = `<b>${label}</b> · ${Math.round(tris).toLocaleString()} tris · ${size.x.toFixed(2)}×${size.y.toFixed(2)}×${size.z.toFixed(2)} m<br>To use it: download the .glb and drop it in <code>assets/models/</code>.`;
+  }, undefined, (e) => { $('pinfo').classList.add('err'); flash('load error: ' + (e.message || 'CORS or bad URL — try downloading it manually')); });
+}
+function resize(){ const r = canvas.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / (r.height || 1); camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+(function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+
+// ---- search ----
+function card(item) {
+  const el = document.createElement('div'); el.className = 'card';
+  const badge = item.source === 'polypizza' ? '<span class="badge pp">Poly Pizza</span>' : '<span class="badge sf">Sketchfab</span>';
+  el.innerHTML = `<img src="${item.thumb || ''}" alt="" onerror="this.style.opacity=.2">
+    <div class="b"><div class="n">${item.name}</div>
+    <div class="m">${badge}${item.author} · ${item.license || '—'}${item.tris ? ' · ' + item.tris + ' tris' : ''}</div>
+    <div class="row"></div></div>`;
+  const row = el.querySelector('.row');
+  if (item.source === 'polypizza' && item.download) {
+    const p = document.createElement('button'); p.textContent = 'Preview'; p.onclick = () => preview(item.download, item.name); row.appendChild(p);
+    const d = document.createElement('button'); d.className = 'ghost'; d.textContent = '.glb'; d.onclick = () => window.open(item.download, '_blank'); row.appendChild(d);
+  } else {
+    const o = document.createElement('button'); o.className = 'ghost'; o.textContent = 'Open'; o.onclick = () => window.open(item.viewer, '_blank'); row.appendChild(o);
+    const g = document.createElement('button'); g.textContent = 'Get DL'; g.onclick = async () => {
+      try { const r = await sketchfabDownload(item.id, localStorage.getItem('sf_key')); const url = r.glb || r.gltfZip; if (!url) throw new Error('no url'); if (r.glb) preview(r.glb, item.name); window.open(url, '_blank'); }
+      catch (e) { $('pinfo').classList.add('err'); flash('Sketchfab: ' + e.message); }
+    }; row.appendChild(g);
+  }
+  const a = document.createElement('button'); a.className = 'ghost'; a.textContent = '©'; a.title = 'copy attribution'; a.onclick = () => navigator.clipboard.writeText(item.attribution || item.name); row.appendChild(a);
+  return el;
+}
+async function run() {
+  const q = $('q').value.trim(); if (!q) return;
+  const grid = $('grid'), errs = $('errs'); grid.innerHTML = ''; errs.textContent = '';
+  const ppKey = localStorage.getItem('pp_key'), sfKey = localStorage.getItem('sf_key');
+  const tasks = [];
+  if (ppKey) tasks.push(searchPolyPizza(q, ppKey, 20).then((r) => r).catch((e) => { errs.textContent += 'Poly Pizza: ' + e.message + '  '; return []; }));
+  else errs.textContent += 'Add a Poly Pizza key for direct-loadable models.  ';
+  tasks.push(searchSketchfab(q, { token: sfKey, count: 24, license: $('lic').value }).catch((e) => { errs.textContent += 'Sketchfab: ' + e.message + '  '; return []; }));
+  const results = (await Promise.all(tasks)).flat();
+  if (!results.length && !errs.textContent) errs.textContent = 'No results.';
+  results.forEach((it) => grid.appendChild(card(it)));
+}
+$('go').onclick = run; $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+</script>
+</body>
+</html>
