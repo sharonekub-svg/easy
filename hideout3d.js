@@ -12,6 +12,38 @@
  */
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+
+// warm cinematic colour grade + gentle vignette (operates in linear space)
+var GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    warmth: { value: 0.06 },      // push highlights warm, shadows cool
+    saturation: { value: 1.12 },
+    vignette: { value: 0.5 },
+    lift: { value: 0.015 }
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; uniform float warmth; uniform float saturation; uniform float vignette; uniform float lift; varying vec2 vUv;',
+    'void main(){',
+    '  vec4 c = texture2D(tDiffuse, vUv);',
+    '  vec3 col = c.rgb + lift;',
+    '  float l = dot(col, vec3(0.2126,0.7152,0.0722));',     // luma
+    '  col = mix(vec3(l), col, saturation);',                  // saturation
+    '  col.r += warmth * l; col.b -= warmth * l * 0.8;',       // warm grade
+    '  vec2 d = vUv - 0.5; float v = 1.0 - dot(d,d) * vignette;', // vignette
+    '  col *= clamp(v, 0.0, 1.0);',
+    '  gl_FragColor = vec4(max(col, 0.0), c.a);',
+    '}'
+  ].join('\n')
+};
 
 (function (root) {
   'use strict';
@@ -208,6 +240,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     sun.shadow.camera.left = -34; sun.shadow.camera.right = 34;
     sun.shadow.camera.top = 34; sun.shadow.camera.bottom = -34;
     sun.shadow.bias = -0.0004; scene.add(sun); scene.add(sun.target);
+    // soft warm fill from the opposite side fakes bounced light (baked feel)
+    var fill = new THREE.DirectionalLight(0xffe6c0, 0.35); fill.position.set(-16, 14, -10); scene.add(fill);
 
     var ARENA = 34;
     var GRASS = 0x69bf48;
@@ -519,10 +553,24 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     window.addEventListener('keydown', keyDown, true);
     window.addEventListener('keyup', keyUp, true);
 
+    // ---- post-processing: contact-shadow AO + subtle bloom + cinematic grade ----
+    var composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    var gtao = new GTAOPass(scene, camera, 1, 1, undefined,
+      { radius: 0.5, distanceExponent: 1.0, thickness: 1.0, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.blendIntensity = 0.9; composer.addPass(gtao);
+    var bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.6, 0.85); composer.addPass(bloom);
+    composer.addPass(new ShaderPass(GradeShader));
+    composer.addPass(new OutputPass());
+    composer.addPass(new SMAAPass(1, 1));
+
     function resize() {
       var r = canvas.getBoundingClientRect(); if (r.width < 4 || r.height < 4) return;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      var pr = Math.min(window.devicePixelRatio || 1, 2);
+      renderer.setPixelRatio(pr);
       renderer.setSize(r.width, r.height, false);
+      composer.setPixelRatio(pr);
+      composer.setSize(r.width, r.height);
       camera.aspect = r.width / r.height; camera.updateProjectionMatrix();
     }
     window.addEventListener('resize', resize);
@@ -533,7 +581,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
       camera.position.lerp(camPos, 0.12);
       camera.lookAt(player.position.x, 1.5, player.position.z - 2);
       sun.target.position.copy(player.position);
-      renderer.render(scene, camera);
+      composer.render();
     }
     function frame(now) {
       if (last == null) last = now; var dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -555,7 +603,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
         window.removeEventListener('keyup', keyUp, true);
         window.removeEventListener('resize', resize);
         [overlay, camo, flashEl, splashEl, palette, muteBtn].forEach(function (el) { if (el.parentElement) el.parentElement.removeChild(el); });
-        audio.dispose(); pmrem.dispose(); renderer.dispose();
+        audio.dispose(); pmrem.dispose(); composer.dispose(); renderer.dispose();
       }
     };
   }
