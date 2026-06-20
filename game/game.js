@@ -99,14 +99,17 @@ export class Game {
     map.apply(this.scene, this.engine.renderer, this.engine);
 
     this.world = new World(this.scene, map);
-    // load any real glTF props for this map (the loading screen is already up)
+    const scaleOpts = map.castScale || { hiderScale: 0.62, hunterScale: 1.7 };
+    // load real glTF props for this map + a real model for the hunter (the
+    // loading screen is already up to cover the fetch)
     await this._loadMapModels(map);
+    let hunterModel = null;
+    try { hunterModel = await loadModel('./assets/models/RobotExpressive.glb'); normalize(hunterModel, 1.35 * (scaleOpts.hunterScale || 1.7)); } catch (e) { hunterModel = null; }
     if (this.state !== 'loading') return; // round was cancelled while loading
 
     this.manager = new EntityManager(this.world, this.audio);
     const hiders = 4 + Math.floor(Math.random() * 2);
-    const scaleOpts = map.castScale || { hiderScale: 0.62, hunterScale: 1.7 };
-    this.manager.spawn(this.mode, map, this._playerTarget.clone(), hiders, scaleOpts);
+    this.manager.spawn(this.mode, map, this._playerTarget.clone(), hiders, Object.assign({}, scaleOpts, { hunterModel }));
     this.player = this.manager.player;
     this.player.cham.setColorTarget(this._playerTarget, true);
     this.ui.syncColor({ r: this._playerTarget.r, g: this._playerTarget.g, b: this._playerTarget.b });

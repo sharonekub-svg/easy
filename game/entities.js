@@ -125,10 +125,16 @@ function colorDist(a, c) { const dr = a.r - c.r, dg = a.g - c.g, db = a.b - c.b;
 
 export class Agent {
   constructor(opts) {
-    this.cham = new Chameleon({ color: opts.color, isAI: !opts.isPlayer });
-    this.group = this.cham.group;
     this.scale = opts.scale || 1;
-    this.group.scale.setScalar(this.scale);
+    if (opts.model) {
+      // real glTF visual (already normalised to size by the loader)
+      this.cham = null; this.model = opts.model;
+      this.group = new THREE.Group(); this.group.add(this.model);
+    } else {
+      this.cham = new Chameleon({ color: opts.color, isAI: !opts.isPlayer });
+      this.group = this.cham.group;
+      this.group.scale.setScalar(this.scale);
+    }
     this.radius = Math.max(0.2, 0.55 * this.scale);   // collision footprint scales with size
     this.pos = new THREE.Vector3();
     this.vel = new THREE.Vector3();
@@ -160,7 +166,7 @@ export class EntityManager {
     this._tmp2 = new THREE.Vector3();
   }
   add(a) { this.agents.push(a); this.world.scene.add(a.group); return a; }
-  clear() { this.agents.forEach((a) => { if (a.group.parent) a.group.parent.remove(a.group); a.cham.dispose(); }); this.agents = []; this.player = null; }
+  clear() { this.agents.forEach((a) => { if (a.group.parent) a.group.parent.remove(a.group); if (a.cham) a.cham.dispose(); }); this.agents = []; this.player = null; }
 
   spawn(mode, mapDesc, playerColor, hiderCount, opts) {
     this.mode = mode; this.clear();
@@ -184,9 +190,9 @@ export class EntityManager {
       a._newWaypoint = true; this.add(a);
     }
 
-    // the HUNTER — much larger and more imposing
-    const h = new Agent({ color: 0xd6342a, team: 'hunter', name: 'Hunter', scale: this.hunterScale });
-    h.cham.setColorTarget(new THREE.Color(0xd6342a), true);
+    // the HUNTER — much larger and more imposing; a real model if one was provided
+    const h = new Agent({ color: 0xd6342a, team: 'hunter', name: 'Hunter', scale: this.hunterScale, model: opts.hunterModel || null });
+    if (h.cham) h.cham.setColorTarget(new THREE.Color(0xd6342a), true);
     h.setPos(mapDesc.hunterSpawn.clone());
     h._isHunter = true; this.hunterAgent = h; this.add(h);
     h.dormant = true; // hunters sleep through the HIDE phase; wake at HUNT
@@ -299,7 +305,7 @@ export class EntityManager {
   }
 
   _updateHunter(h, dt, time) {
-    if (h.dormant) { h.cham.update(dt, {}); h.syncMesh(); return; }
+    if (h.dormant) { if (h.cham) h.cham.update(dt, {}); h.syncMesh(); return; }
     const targets = [this.player].concat(this.hiders()).filter((t) => t && t.alive && t !== h);
     // SIGHT: nearest visible target
     let prey = null, pd = Infinity;
@@ -353,7 +359,9 @@ export class EntityManager {
       const catchDist = h.radius + t.radius + 0.6;
       if (t.alive && t.pos.distanceTo(h.pos) < catchDist && (this.sees(h, t) || (t._noise || 0) > 0.25)) this._catch(t, h);
     }
-    h.syncMesh(); h.cham.update(dt, { moving: h._moving || scanning, lookAt });
+    h.syncMesh();
+    if (h.cham) h.cham.update(dt, { moving: h._moving || scanning, lookAt });
+    else if (h.model) { h.model.position.y = Math.abs(Math.sin(time * 6)) * 0.06 * (h._moving ? 1 : 0); } // simple model bob while walking
   }
 
   _catch(target, hunter) {
