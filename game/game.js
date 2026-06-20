@@ -45,6 +45,7 @@ export class Game {
       start: (mode, map, tut) => this.startRound(mode, map, tut),
       pose: (p) => this.setPose(p),
       eyedrop: () => this.eyedrop(),
+      jumpHeld: (v) => this.input.setJumpHeld(v),
       setColor: (rgb) => { this._playerTarget.setRGB(rgb.r, rgb.g, rgb.b); if (this.player) this.player.cham.setColorTarget(this._playerTarget); },
       setting: (k, v) => this.applySetting(k, v),
       resume: () => this.resume(),
@@ -102,9 +103,9 @@ export class Game {
 
     // camera framing scales with how small the player is (little toy = closer, lower)
     this.playerScale = this.player.scale || 1;
-    this._focusH = 0.95 * this.playerScale + 0.35;
-    this.camDist = 3.4 + 5.6 * this.playerScale;
-    this.camShoulder = 0.55 * this.playerScale;
+    this._focusH = 0.9 * this.playerScale + 0.5;
+    this.camDist = 4.6 + 6.0 * this.playerScale;
+    this.camShoulder = 0.4 * this.playerScale;
     this.yaw = 0; this.pitch = 0.40; this.fov = 58; this.camera.fov = 58; this.camera.updateProjectionMatrix();
     this._focusPoint(this._camLook);
     this._snapCamera();
@@ -128,11 +129,11 @@ export class Game {
 
   _runTutorial() {
     const seq = [
-      [200, 'Move with W A S D · hold SHIFT to sprint · SPACE to hop'],
-      [3800, 'Aim at any object with the crosshair, press E to PAINT yourself its colour'],
-      [7600, 'The brush sweeps the colour over your body — match a nearby toy'],
-      [11400, 'STAY STILL on matching cover so your CAMO meter fills and you vanish'],
-      [15200, 'Moving makes noise — the giant hunter can HEAR you!']
+      [200, 'Move with W A S D · hold SHIFT to sprint · tap SPACE to hop'],
+      [3600, 'Climb like a chameleon: push into a wall or toy and HOLD SPACE to climb up'],
+      [7200, 'Aim with the crosshair, press E to PAINT yourself an object\'s colour'],
+      [10800, 'STAY STILL on matching cover so your CAMO meter fills and you vanish'],
+      [14400, 'A countdown shows when the giant hunter is released — hide before then!']
     ];
     seq.forEach((s) => this._tutTimers.push(setTimeout(() => this.ui.showHint(s[1], 3800), s[0])));
   }
@@ -141,14 +142,18 @@ export class Game {
     this.phase = 'hunt'; this.phaseTime = HUNT_TIME;
     if (this.mode === 'double') this.manager.flipToHunt(); else this.manager.wakeHunters();
     this.ui.setPhase('HUNT — survive!', '#e8483b');
+    this.ui.setCountdown('GO!', 'HUNTER RELEASED');
+    this._roundTimers.push(setTimeout(() => this.ui.setCountdown(null), 1100));
     this.ui.showHint('The hunt is on. Hold still and stay matched!', 3500);
     this.audio.stinger('start');
+    this.fx.shake(0.5);
     this.state = 'hunt';
   }
 
   _endRound(win, title, subtitle) {
     if (this.over) return; this.over = true; this.won = win;
     this.input.setEnabled(false);
+    this.ui.setCountdown(null);
     this.audio.stopAmbient();
     this.audio.stinger(win ? 'win' : 'lose');
     if (this.survived > this.best) { this.best = this.survived; localStorage.setItem('mc_best', String(this.best)); }
@@ -172,6 +177,7 @@ export class Game {
     this._teardownRound();
     this.state = 'menu'; this.paused = false;
     this.input.setEnabled(false);
+    this.ui.setCountdown(null);
     this.ui.showScreen('menu');
     this.opts.onScore && this.opts.onScore(0);
   }
@@ -326,21 +332,46 @@ export class Game {
     const speedNow = Math.hypot(this._vx, this._vz);
     const moving = speedNow > 0.4;
 
-    // integrate horizontal
+    // integrate horizontal, then resolve against the world as a PLATFORMER:
+    // walls block, low lips auto-step, box tops become standable ground.
     p.x += this._vx * dt; p.z += this._vz * dt;
     const pr = this.player.radius || 0.4;
-    this.world.clampBounds(p, pr); this.world.collide(p, pr);
+    const step = Math.max(0.4, 0.8 * (this.playerScale || 1));
+    const res = this.world.resolve(p, pr, p.y, step);
     if (moving) {
       const target = Math.atan2(this._vx, this._vz);
       let d = target - this.player.heading; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-      this.player.heading += d * Math.min(1, dt * 16); // responsive but not snappy
+      this.player.heading += d * Math.min(1, dt * 18); // responsive facing
     }
 
-    // vertical (jump) integration
-    if (!this._onGround) {
-      this._vy -= 22 * dt; p.y += this._vy * dt;
-      if (p.y <= 0) { p.y = 0; this._onGround = true; this._vy = 0; this.player.cham.land(); this.audio.land(); this.fx.dust(p); this.fx.noiseRing(p, 0.8); }
-    } else p.y = (pose === 'curl' || pose === 'lie') ? p.y : 0;
+    // ---- vertical: jump / gravity / stand-on-objects / chameleon WALL CLIMB ----
+    const groundY = res.support;
+    const wantClimb = this.input.jumpHeld && res.hitWall && res.wallTop > p.y + 0.15;
+    if (wantClimb) {
+      // hug the wall and climb: W climbs up, S climbs down; release to drop
+      this._climbing = true; this._onGround = false; this._vy = 0;
+      const up = -inp.move.z;
+      const dir = up > 0.1 ? 1 : (up < -0.1 ? -1 : 0.65);
+      p.y = Math.max(groundY, Math.min(res.wallTop, p.y + 3.6 * dt * dir));
+      this._noiseBoost = Math.max(this._noiseBoost, 0.3);
+      if (p.y >= res.wallTop - 0.05) {            // reached the top -> mantle onto it
+        p.x += Math.sin(this.player.heading) * (pr + 0.4);
+        p.z += Math.cos(this.player.heading) * (pr + 0.4);
+        this._climbing = false; this._vy = 2.4;
+      }
+      this.input.consumeJump();
+    } else {
+      this._climbing = false;
+      if (this.input.consumeJump() && this._onGround) {   // tap to hop
+        this._vy = 8.5; this._onGround = false; this._noiseBoost = 0.9;
+        this.player.cham.hop(); this.audio.jump(); this.fx.noiseRing(p, 0.7);
+      }
+      if (!this._onGround || p.y > groundY + 0.02) {       // airborne -> gravity, land on support
+        this._vy -= 24 * dt; p.y += this._vy * dt;
+        if (p.y <= groundY) { if (!this._onGround && this._vy < -3) { this.player.cham.land(); this.audio.land(); this.fx.dust(p); if (this._vy < -7) this.fx.noiseRing(p, 0.7); } p.y = groundY; this._onGround = true; this._vy = 0; }
+        else this._onGround = false;
+      } else { p.y = groundY; this._vy = 0; this._onGround = true; }
+    }
     this.player.syncMesh();
 
     // footsteps + dust + noise ring (scaled by real speed)
@@ -404,6 +435,7 @@ export class Game {
     this.phaseTime -= dt;
     if (this.phase === 'hide') {
       this.ui.setTimer(this.phaseTime);
+      this.ui.setCountdown(this.phaseTime, 'HUNTER RELEASED IN');   // big centre countdown
       if (this.phaseTime <= 0) this._beginHunt();
     } else {
       this.survived += dt; this.coins += dt * 1.5;

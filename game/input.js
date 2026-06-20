@@ -23,7 +23,9 @@ export class Input {
 
   onAction(cb) { this._actionCbs.push(cb); }
   _fire(a) { this._actionCbs.forEach((c) => c(a)); }
-  setEnabled(v) { this._enabled = v; if (!v) { this._keys = {}; this.run = false; } }
+  setEnabled(v) { this._enabled = v; if (!v) { this._keys = {}; this.run = false; this.jumpHeld = false; this._jumpEdge = false; } }
+  consumeJump() { const e = this._jumpEdge; this._jumpEdge = false; return e; }
+  setJumpHeld(v) { if (this._enabled) { if (v && !this.jumpHeld) this._jumpEdge = true; this.jumpHeld = v; } }  // for touch button
 
   _bind() {
     const keyMap = {
@@ -31,17 +33,19 @@ export class Input {
       a: 'left', arrowleft: 'left', d: 'right', arrowright: 'right'
     };
     const actionMap = {
-      e: 'eyedrop', f: 'eyedrop', ' ': 'jump', '1': 'pose_stand',
+      e: 'eyedrop', f: 'eyedrop', '1': 'pose_stand',
       c: 'pose_crouch', '2': 'pose_crouch', 'control': 'pose_crouch',
       'x': 'pose_curl', '3': 'pose_curl', 'z': 'pose_lie', '4': 'pose_lie',
       'r': 'interact', 'p': 'pause', 'escape': 'pause', 'm': 'mute'
     };
+    this.jumpHeld = false; this._jumpEdge = false; // SPACE: tap=jump, hold=climb
 
     this._kd = (e) => {
       const ae = document.activeElement;
       if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
       const k = e.key.toLowerCase();
       if (k === 'shift') { this.run = true; return; }
+      if (k === ' ' || k === 'spacebar') { if (this._enabled) { this.jumpHeld = true; if (!e.repeat) this._jumpEdge = true; } e.preventDefault(); return; }
       if (keyMap[k]) { this._keys[keyMap[k]] = true; e.preventDefault(); return; }
       if (!this._enabled) { if (actionMap[k] === 'pause') this._fire('pause'); return; }
       if (actionMap[k]) { e.preventDefault(); if (!e.repeat) this._fire(actionMap[k]); }
@@ -49,6 +53,7 @@ export class Input {
     this._ku = (e) => {
       const k = e.key.toLowerCase();
       if (k === 'shift') { this.run = false; return; }
+      if (k === ' ' || k === 'spacebar') { this.jumpHeld = false; e.preventDefault(); return; }
       if (keyMap[k]) { this._keys[keyMap[k]] = false; e.preventDefault(); }
     };
     window.addEventListener('keydown', this._kd, true);
@@ -141,7 +146,10 @@ export class Input {
       else if (p && !this._gpPrev[i] && action === 'pause') this._fire(action);
       this._gpPrev[i] = p;
     };
-    btn(0, 'jump');         // A
+    // A button: held = climb, rising edge = jump
+    const a0 = gp.buttons[0] && gp.buttons[0].pressed;
+    if (this._enabled) { this.jumpHeld = a0 || this.jumpHeld; if (a0 && !this._gpA) this._jumpEdge = true; if (!a0 && this._gpA) this.jumpHeld = false; }
+    this._gpA = a0;
     btn(1, 'pose_curl');    // B
     btn(2, 'eyedrop');      // X
     btn(3, 'pose_lie');     // Y

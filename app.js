@@ -332,7 +332,7 @@
     apex:    { name: 'Apex Drift',       tag: 'NEON RACER', download: './dist/apex-drift.html',
                hint: 'click the preview · ↑ accelerate · ← → steer' },
     hideout: { name: 'Meccha Chameleon', tag: 'BLEND HIDE & SEEK', download: null,
-               hint: 'WASD move · Shift sprint · Space hop · aim + E to paint yourself an object\'s colour, then hold still to vanish' }
+               hint: 'WASD move · Shift sprint · tap Space hop, hold Space to climb walls · aim + E to paint yourself, then hold still to vanish' }
   };
 
   function applyGameMeta() {

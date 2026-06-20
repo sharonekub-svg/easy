@@ -34,6 +34,31 @@ export class World {
       }
     }
   }
+  // Platformer resolve for the player: walls block, low lips step up, and box
+  // tops become standable ground so you can climb ONTO and walk on furniture.
+  // Returns { support, hitWall, wallTop } given current feet height + step.
+  resolve(p, radius, feetY, step) {
+    let support = 0, hitWall = false, wallTop = 0;
+    for (let i = 0; i < this.colliders.length; i++) {
+      const c = this.colliders[i];
+      const top = c.top == null ? c.h : c.top;
+      const hw = c.hw + radius, hd = c.hd + radius;
+      const dx = p.x - c.x, dz = p.z - c.z;
+      if (Math.abs(dx) >= hw || Math.abs(dz) >= hd) continue;
+      const overFoot = Math.abs(dx) < c.hw + radius * 0.4 && Math.abs(dz) < c.hd + radius * 0.4;
+      if (top <= feetY + step) {
+        if (overFoot) support = Math.max(support, top);          // floor / step-up / standing on it
+      } else if (feetY >= top - 0.06) {
+        if (overFoot) support = Math.max(support, top);          // already on top of a tall box
+      } else {
+        const ox = hw - Math.abs(dx), oz = hd - Math.abs(dz);    // a wall: push out
+        if (ox < oz) p.x = c.x + (dx < 0 ? -hw : hw); else p.z = c.z + (dz < 0 ? -hd : hd);
+        hitWall = true; wallTop = Math.max(wallTop, top);
+      }
+    }
+    this.clampBounds(p, radius);
+    return { support, hitWall, wallTop };
+  }
   losBlocked(from, to) {
     const d = this._tmp.copy(to).sub(from); d.y = 0; const dist = d.length(); if (dist < 0.001) return false;
     d.normalize();
@@ -74,7 +99,7 @@ export class World {
   // colour of the surface directly under / nearest to a position (for camo)
   surfaceColorAt(pos, out) {
     out = out || new THREE.Color();
-    this.ray.set(this._tmp.set(pos.x, 3, pos.z), this._down); this.ray.far = 6;
+    this.ray.set(this._tmp.set(pos.x, pos.y + 4, pos.z), this._down); this.ray.far = 6;
     const hits = this.ray.intersectObjects(this.pickables, false);
     if (hits.length) { const m = hits[0].object.material; if (m && m.color) { out.copy(m.color); return out; } }
     // fallback: nearest prop colour

@@ -46,9 +46,13 @@ To change colour you PAINT yourself: aim the crosshair at any object (or stand o
 a surface) and press E — the chameleon lifts a brush and the colour sweeps up its
 body. The cast is scaled like toys: small hider chameleons and a towering hunter.
 
-Controls: WASD move · Shift sprint · Space hop · C crouch (sprint+C slide) · X curl ·
-Z lie · E paint · drag to look. Modes: Classic, Infection, Double. 60fps with
-adjustable quality (Low/Med/High).
+Movement is a true platformer: you can jump and climb ONTO furniture and toys,
+and — like a chameleon — hold SPACE against a wall/object to climb straight up it.
+A big countdown shows when the giant hunter is released.
+
+Controls: WASD move · Shift sprint · tap Space hop · hold Space climb · C crouch
+(sprint+C slide) · X curl · Z lie · E paint · drag to look. Modes: Classic,
+Infection, Double. 60fps with adjustable quality (Low/Med/High).
 
 ## Screens
 

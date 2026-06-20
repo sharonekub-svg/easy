@@ -27,7 +27,7 @@ class Builder {
     if (o.tex) TEX.applyTex(m.material, o.tex, o.rep, o.bumpScale);
     if (o.emissive != null) { m.material.emissive = new THREE.Color(o.emissive); m.material.emissiveIntensity = o.emissiveI || 1; }
     this.group.add(m); this.pickables.push(m);
-    if (o.collide !== false) this.collide(x, z, w, d, o.rotY, h);
+    if (o.collide !== false) this.collide(x, z, w, d, o.rotY, h, y + h / 2);
     return m;
   }
   cyl(r, h, color, x, y, z, o) {
@@ -36,7 +36,7 @@ class Builder {
     m.position.set(x, y, z); m.castShadow = o.cast !== false; m.receiveShadow = true;
     if (o.emissive != null) { m.material.emissive = new THREE.Color(o.emissive); m.material.emissiveIntensity = o.emissiveI || 1; }
     this.group.add(m); this.pickables.push(m);
-    if (o.collide) this.collide(x, z, r * 2, r * 2, 0, h);
+    if (o.collide) this.collide(x, z, r * 2, r * 2, 0, h, y + h / 2);
     return m;
   }
   sphere(r, color, x, y, z, o) {
@@ -53,10 +53,11 @@ class Builder {
     if (o.tex) TEX.applyTex(m.material, o.tex, o.rep, o.bumpScale);
     this.group.add(m); this.pickables.push(m); return m;
   }
-  collide(x, z, w, d, rotY, h) {
+  collide(x, z, w, d, rotY, h, top) {
     let hw = w / 2, hd = d / 2;
     if (rotY) { const c = Math.abs(Math.cos(rotY)), s = Math.abs(Math.sin(rotY)); hw = (w * c + d * s) / 2; hd = (w * s + d * c) / 2; }
-    this.colliders.push({ x, z, hw, hd, h: h || 1 });
+    h = h || 1;
+    this.colliders.push({ x, z, hw, hd, h, top: top == null ? h : top });
   }
   wallWithGaps(horizontal, fixed, start, end, gaps, h, color, tex) {
     let segs = [[start, end]];
@@ -517,6 +518,24 @@ function officeChair(b, x, z, color) {
   b.box(1.4, 1.6, 0.3, color, x, 2.4, z - 0.55, { collide: false, rough: 0.6 });      // back
 }
 
+// classic wooden rocking horse
+function rockingHorse(b, x, z, rotY) {
+  const g = rotY || 0, wood = 0xc89b6a, mane = 0xd5352b;
+  b.collide(x, z, 2.6, 1.0, g, 2.2);
+  // curved rockers (approximate with two long thin boxes)
+  [[-0.45], [0.45]].forEach((p) => { const [rx, rz] = relMap(x, z, g, 0, p[0]); b.box(2.6, 0.18, 0.16, wood, rx, 0.12, rz, { rotY: g, collide: false, cast: false }); });
+  // legs
+  [[0.7, 0.4], [0.7, -0.4], [-0.7, 0.4], [-0.7, -0.4]].forEach((p) => { const [lx, lz] = relMap(x, z, g, p[0], p[1]); b.box(0.16, 0.8, 0.16, wood, lx, 0.5, lz, { collide: false, cast: false }); });
+  // body + head + mane
+  b.box(1.6, 0.7, 0.7, wood, x, 1.1, z, { collide: false, rough: 0.5, rotY: g });
+  const [hx, hz] = relMap(x, z, g, 0.95, 0); b.box(0.5, 0.8, 0.5, wood, hx, 1.5, hz, { collide: false, rough: 0.5, rotY: g });
+  b.box(0.2, 0.7, 0.4, mane, hx - 0.2 * Math.cos(g), 1.6, hz + 0.2 * Math.sin(g), { collide: false, cast: false });
+  const [tx, tz] = relMap(x, z, g, -0.9, 0); b.box(0.16, 0.6, 0.3, mane, tx, 1.0, tz, { collide: false, cast: false });
+  // seat handle
+  b.cyl(0.06, 0.4, 0x6a4a2c, x, 1.6, z, { collide: false, cast: false, seg: 8 });
+}
+function relMap(x, z, rotY, lx, lz) { const c = Math.cos(rotY || 0), s = Math.sin(rotY || 0); return [x + lx * c + lz * s, z - lx * s + lz * c]; }
+
 function buildToyRoom() {
   const b = new Builder();
   const r = rng(99);
@@ -550,11 +569,30 @@ function buildToyRoom() {
   b.cyl(0.16, 5, 0x6a5038, 22, 2.5, 16, { collide: true, rough: 0.5 });
   b.cyl(0.9, 0.9, 0xf0e2c0, 22, 5.2, 16, { r2: 0.6, collide: false, cast: false, emissive: 0xffe7b0, emissiveI: 0.5 });
 
+  // bedroom DOOR (west wall) + frame + knob
+  b.box(0.3, 6.5, 4, 0xc7a06a, -X + 0.3, 3.25, -6, { collide: false, rough: 0.5, tex: TEX.wood(0xc7a06a, 4), rep: 2 });
+  b.box(0.5, 7, 4.6, 0xffffff, -X + 0.2, 3.5, -6, { collide: false, cast: false, rough: 0.6 });
+  b.sphere(0.16, 0xe8c84a, -X + 0.5, 3.0, -7.6, { collide: false, cast: false, rough: 0.3, metal: 0.6 });
+  // WARDROBE (north wall)
+  b.box(5.5, 7, 2.6, 0x8a6a44, 12, 3.5, -20.5, { rough: 0.45, tex: TEX.wood(0x8a6a44, 3), rep: 2 });
+  b.box(2.5, 6, 0.2, 0x7a5a36, 10.6, 3.5, -19.1, { collide: false, cast: false }); b.box(2.5, 6, 0.2, 0x7a5a36, 13.4, 3.5, -19.1, { collide: false, cast: false });
+  b.sphere(0.12, 0x2a2a30, 11.8, 3.5, -19.0, { collide: false, cast: false }); b.sphere(0.12, 0x2a2a30, 12.2, 3.5, -19.0, { collide: false, cast: false });
+  // ROUND RUG + an oval bedside rug
+  b.cyl(4.5, 0.06, 0xd25b7a, 4, 0.03, 6, { collide: false, cast: false, seg: 32, rough: 0.95, tex: TEX.carpet(0xd25b7a), rep: 3 });
+  // ROCKING HORSE (classic toy)
+  rockingHorse(b, -8, 16, 0.4);
+  // a couple of stuffed toys on the bed
+  b.sphere(0.7, 0xe0a040, -14, 1.6, -10, { collide: false, rough: 0.9 }); b.sphere(0.7, 0x9b6fd0, -18, 1.6, -10, { collide: false, rough: 0.9 });
+
   // window + posters on the cloud walls
   bigWindow(b, 0, 5.2, -21.6, 0, 8, 6);
   poster(b, -10, 5.2, -21.6, 0, 3.4, 4.4, 0xe6b93c);
   poster(b, 10, 5.2, -21.6, 0, 3.4, 4.4, 0x4fbf5a);
   poster(b, -21.6, 5.2, 8, Math.PI / 2, 3.4, 4.4, 0xe2739a);
+  poster(b, 21.6, 6.0, 6, -Math.PI / 2, 3, 4, 0x4f9dd8);
+  // crown trim where walls meet (top band)
+  [[-Z, X * 2, 0.5], [Z, X * 2, 0.5]].forEach((p) => b.box(p[1], 0.5, 0.5, 0xffffff, 0, WALL_H - 0.3, p[0], { collide: false, cast: false, rough: 0.5 }));
+  [[-X], [X]].forEach((p) => b.box(0.5, 0.5, Z * 2, 0xffffff, p[0], WALL_H - 0.3, 0, { collide: false, cast: false, rough: 0.5 }));
 
   // hanging mobile over the bed
   _anim.push(mobile(b, -16, 8.4, -13));

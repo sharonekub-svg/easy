@@ -69,6 +69,12 @@ const CSS = `
 .mc-camo-lbl{font-family:'Martian Mono';font-size:11px;font-weight:800;letter-spacing:2px;text-shadow:0 1px 4px rgba(0,0,0,.6);}
 .mc-camo-track{width:100%;height:9px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.3);border-radius:999px;overflow:hidden;}
 .mc-camo-fill{height:100%;width:0;background:#2ec4a6;transition:width .12s,background .25s;}
+.mc-count{position:absolute;top:34%;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;text-shadow:0 4px 18px rgba(0,0,0,.6);}
+.mc-count-sub{font-family:'Martian Mono';font-size:13px;font-weight:700;letter-spacing:3px;color:#ffd98a;}
+.mc-count-num{font-family:'Martian Mono';font-weight:800;font-size:84px;line-height:1;color:#fff;}
+.mc-count-num.pulse{animation:mc-pop .5s ease-out;}
+.mc-count-num.go{color:#e8483b;}
+@keyframes mc-pop{0%{transform:scale(1.6);opacity:.2}60%{transform:scale(.9)}100%{transform:scale(1);opacity:1}}
 .mc-coin{display:inline-flex;width:13px;height:13px;color:#ffd06a;}
 .mc-coin svg{width:100%;height:100%;}
 .mc-arrow{position:absolute;top:50%;left:50%;width:120px;height:120px;margin:-60px 0 0 -60px;pointer-events:none;transition:opacity .2s;opacity:0;}
@@ -109,6 +115,9 @@ const CSS = `
 .mc-touch.on{display:block;}
 .mc-stick{position:absolute;bottom:26px;left:26px;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);}
 .mc-stick .nub{position:absolute;top:50%;left:50%;width:50px;height:50px;margin:-25px 0 0 -25px;border-radius:50%;background:rgba(255,255,255,.35);transition:transform .04s;}
+.mc-jump{position:absolute;bottom:40px;right:30px;width:78px;height:78px;border-radius:50%;border:2px solid rgba(255,255,255,.35);background:rgba(67,192,216,.3);color:#fff;font-family:'Martian Mono';font-size:11px;font-weight:700;pointer-events:auto;}
+.mc-jump:active{background:rgba(126,224,138,.5);}
+.mc-jump .sm{display:block;font-size:8px;color:rgba(255,255,255,.6);}
 
 /* results */
 .mc-result-stats{display:flex;gap:26px;margin:6px 0 8px;}
@@ -226,6 +235,11 @@ export class UI {
     const camo = this._el('mc-camo', '<div class="mc-camo-lbl" id="mc-camo-lbl">HIDDEN</div><div class="mc-camo-track"><div class="mc-camo-fill" id="mc-camo-fill"></div></div>');
     h.appendChild(camo);
 
+    // big centre countdown (time until the hunter is released)
+    this.countEl = this._el('mc-count', '<div class="mc-count-sub" id="mc-count-sub">HUNTER RELEASED IN</div><div class="mc-count-num" id="mc-count-num">12</div>');
+    this.countEl.style.display = 'none';
+    h.appendChild(this.countEl);
+
     // hunter arrow
     this.arrowEl = this._el('mc-arrow', `<svg viewBox="0 0 100 100"><defs><filter id="gl"><feGaussianBlur stdDeviation="1.5"/></filter></defs><path d="M50 4 L60 22 L50 16 L40 22 Z" fill="#e8483b" filter="url(#gl)"/></svg>`);
     h.appendChild(this.arrowEl);
@@ -273,6 +287,15 @@ export class UI {
     this.touchEl = this._el('mc-touch' + (this.isTouch ? ' on' : ''), '');
     this.stickEl = this._el('mc-stick', '<div class="nub"></div>'); this.stickNub = this.stickEl.querySelector('.nub');
     this.touchEl.appendChild(this.stickEl);
+    // jump / hold-to-climb button (touch)
+    this.jumpBtn = document.createElement('button'); this.jumpBtn.className = 'mc-jump'; this.jumpBtn.innerHTML = 'JUMP<span class="sm">hold = climb</span>';
+    const jh = (v) => (e) => { e.preventDefault(); this.cb.jumpHeld && this.cb.jumpHeld(v); };
+    this.jumpBtn.addEventListener('touchstart', jh(true), { passive: false });
+    this.jumpBtn.addEventListener('touchend', jh(false));
+    this.jumpBtn.addEventListener('touchcancel', jh(false));
+    this.jumpBtn.addEventListener('mousedown', jh(true));
+    this.jumpBtn.addEventListener('mouseup', jh(false));
+    this.touchEl.appendChild(this.jumpBtn);
     h.appendChild(this.touchEl);
 
     this.eyeBtn.onclick = () => { this.cb.eyedrop && this.cb.eyedrop(); };
@@ -340,6 +363,19 @@ export class UI {
   setCoins(n) { this.coinEl.querySelector('.v').textContent = n; }
   setBest(s) { this.bestEl.querySelector('.v').textContent = Math.floor(s) + 's'; }
   setActivePose(name) { for (const k in this.poseBtns) this.poseBtns[k].classList.toggle('active', k === name); }
+  // big centre countdown; pass the seconds remaining (or 'GO' string), null to hide
+  setCountdown(val, sub) {
+    if (val == null) { this.countEl.style.display = 'none'; this._lastCount = null; return; }
+    this.countEl.style.display = 'block';
+    const num = document.getElementById('mc-count-num'), s = document.getElementById('mc-count-sub');
+    if (sub != null) s.textContent = sub;
+    const txt = typeof val === 'number' ? String(Math.max(0, Math.ceil(val))) : val;
+    if (txt !== this._lastCount) {
+      num.textContent = txt; this._lastCount = txt;
+      num.classList.toggle('go', typeof val !== 'number');
+      num.classList.remove('pulse'); void num.offsetWidth; num.classList.add('pulse');
+    }
+  }
 
   setCamo(state, value) {
     const fill = document.getElementById('mc-camo-fill'), lbl = document.getElementById('mc-camo-lbl');
