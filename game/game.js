@@ -12,6 +12,17 @@ import { UI } from './ui.js';
 import { FX } from './fx.js';
 import { World, EntityManager } from './entities.js';
 import { buildMap } from './maps.js';
+import { loadModel, normalize } from './models.js';
+
+// Real glTF models (CC0) placed into a map as props — proof the asset pipeline
+// works in-game. Drop more .glb files in assets/models/ and add entries here.
+const MAP_MODELS = {
+  toyroom: [
+    { url: './assets/models/RobotExpressive.glb', height: 3.0, x: 7, z: -5, rotY: -0.6 },
+    { url: './assets/models/Duck.glb', height: 1.8, x: -5, z: 9, rotY: 0.5 },
+    { url: './assets/models/Parrot.glb', height: 1.4, x: 11, z: 5, rotY: -1.2 }
+  ]
+};
 
 const HIDE_TIME = 12;
 const HUNT_TIME = 90;
@@ -76,10 +87,10 @@ export class Game {
     this.state = 'loading';
     this.ui.showLoading('ENTERING ' + (mapId === 'garden' ? 'THE GARDEN…' : mapId === 'toyroom' ? "ANDY'S ROOM…" : 'THE MANSION…'));
     clearTimeout(this._buildT);
-    this._buildT = setTimeout(() => this._doStartRound(mode, mapId, tutorial), 50);
+    this._buildT = setTimeout(() => { this._doStartRound(mode, mapId, tutorial).catch((e) => console.error('[chameleon] round start failed', e)); }, 50);
   }
 
-  _doStartRound(mode, mapId, tutorial) {
+  async _doStartRound(mode, mapId, tutorial) {
     this._teardownRound();
     this.mode = mode || 'classic'; this.mapId = mapId || 'mansion'; this.tutorial = !!tutorial;
 
@@ -88,6 +99,10 @@ export class Game {
     map.apply(this.scene, this.engine.renderer, this.engine);
 
     this.world = new World(this.scene, map);
+    // load any real glTF props for this map (the loading screen is already up)
+    await this._loadMapModels(map);
+    if (this.state !== 'loading') return; // round was cancelled while loading
+
     this.manager = new EntityManager(this.world, this.audio);
     const hiders = 4 + Math.floor(Math.random() * 2);
     const scaleOpts = map.castScale || { hiderScale: 0.62, hunterScale: 1.7 };
@@ -125,6 +140,22 @@ export class Game {
 
     if (this.tutorial) this._runTutorial();
     else this.ui.showHint('HIDE PHASE — blend into a surface before the hunter wakes!', 4000);
+  }
+
+  // load the real glTF props listed for the current map; each becomes a visual +
+  // a collider so you can hide behind / climb on it. Failures are skipped safely.
+  _loadMapModels(map) {
+    const list = MAP_MODELS[this.mapId]; if (!list) return Promise.resolve();
+    return Promise.all(list.map(async (m) => {
+      try {
+        const obj = await loadModel(m.url);
+        normalize(obj, m.height);
+        obj.position.x = m.x; obj.position.z = m.z; obj.rotation.y = m.rotY || 0;
+        map.group.add(obj);
+        const box = new THREE.Box3().setFromObject(obj); const size = new THREE.Vector3(); box.getSize(size);
+        map.colliders.push({ x: m.x, z: m.z, hw: Math.max(0.3, size.x / 2), hd: Math.max(0.3, size.z / 2), h: size.y, top: size.y });
+      } catch (e) { /* model missing/failed — skip; the game still runs */ }
+    }));
   }
 
   _runTutorial() {
