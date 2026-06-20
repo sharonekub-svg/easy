@@ -29,7 +29,9 @@ scene and stay still to vanish from the hunter. Built as clean ES modules:
   pose + jump squash/stretch, movement lean
 - `game/maps.js` — swappable maps. Andy's Room (the Toy Story bedroom: cloud
   wallpaper, Andy's bed, kids desk + office chair, bookshelf, window, lamps and
-  the full cast as toys), The Mansion and Sunset Garden
+  the full cast as toys), Neon Arcade (dark room of colourful arcade cabinets,
+  glowing neon signs, pinball, a claw machine — bloom-heavy mood), The Mansion
+  and Sunset Garden
 - `game/toys.js` — procedural recreations of the Toy Story cast: Buzz, Woody,
   Jessie & Bullseye, Rex, Hamm, Slinky, Mr. Potato Head, Lenny, the Aliens,
   Lotso, RC and the Luxo Ball. Modelled after the object set in

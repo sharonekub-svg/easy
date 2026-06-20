@@ -636,6 +636,111 @@ function buildToyRoom() {
   });
 }
 
+// =========================== NEON ARCADE ===========================
+function arcadeCabinet(b, x, z, rotY, color) {
+  const g = rotY || 0;
+  b.box(1.3, 2.3, 1.0, color, x, 1.15, z, { rotY: g, rough: 0.4, metal: 0.1 });               // body
+  const [sx, sz] = relMap(x, z, g, 0, 0.52);
+  b.box(0.95, 0.8, 0.08, 0x0a0a16, sx, 1.55, sz, { rotY: g, collide: false, cast: false, emissive: 0x2a3a6a, emissiveI: 1.4, rough: 0.2 }); // screen glow
+  const [mx, mz] = relMap(x, z, g, 0, 0.5);
+  b.box(1.2, 0.45, 0.2, color, mx, 2.15, mz, { rotY: g, collide: false, cast: false, emissive: color, emissiveI: 1.1 }); // marquee
+  const [cx, cz] = relMap(x, z, g, 0, 0.55);
+  b.box(1.1, 0.18, 0.5, 0x16161f, cx, 1.05, cz, { rotY: g, collide: false, cast: false });    // control deck
+  b.cyl(0.05, 0.22, 0xe23b3b, cx, 1.2, cz, { collide: false, cast: false, seg: 8 });          // joystick
+  b.sphere(0.07, 0xffd23b, cx + 0.18, 1.15, cz, { collide: false, cast: false });
+  b.sphere(0.07, 0x4fbf5a, cx - 0.18, 1.15, cz, { collide: false, cast: false });
+}
+function pinball(b, x, z, rotY, color) {
+  const g = rotY || 0;
+  b.box(1.2, 1.0, 2.2, 0x16161f, x, 0.6, z, { rotY: g, rough: 0.4 });
+  const top = b.box(1.1, 0.1, 2.0, color, x, 1.12, z, { rotY: g, collide: false, cast: false, emissive: color, emissiveI: 0.7, rough: 0.3 }); top.rotation.x = -0.18; if (g) top.rotation.y = g;
+  b.box(1.0, 1.2, 0.12, color, x - Math.sin(g) * 1.0, 1.4, z - Math.cos(g) * 1.0, { rotY: g, collide: false, cast: false, emissive: color, emissiveI: 1.0 }); // backbox
+}
+function neonSign(b, x, y, z, rotY, w, h, color) {
+  b.box(w, h, 0.12, color, x, y, z, { rotY, collide: false, cast: false, emissive: color, emissiveI: 1.8, rough: 0.3 });
+  const light = new THREE.PointLight(color, 6, 14, 2); light.position.set(x + Math.sin(rotY) * 0.5, y, z + Math.cos(rotY) * 0.5); b.group.add(light);
+  return { mesh: b.pickables[b.pickables.length - 1], light, base: 1.8, update(dt, t) { const f = 1.4 + Math.sin(t * 13 + x) * 0.3 + (Math.random() < 0.04 ? -1.2 : 0); this.mesh.material.emissiveIntensity = Math.max(0.2, f); light.intensity = Math.max(0.5, f * 4); } };
+}
+function clawMachine(b, x, z) {
+  b.box(2.4, 1.2, 2.4, 0xd5352b, x, 0.6, z, { rough: 0.4 });                                   // base
+  b.box(2.4, 2.6, 2.4, 0x9fe0ff, x, 2.5, z, { collide: false, cast: false, rough: 0.05, metal: 0.1, emissive: 0x183040, emissiveI: 0.3 }); // glass cab (visual)
+  const prizes = [0xe23b3b, 0xf2c33c, 0x4fbf5a, 0x2f7fd8, 0x9b5bd0, 0xe87fb0];
+  for (let i = 0; i < 9; i++) b.sphere(0.32, prizes[i % prizes.length], x + (Math.random() - 0.5) * 1.6, 1.5 + Math.random() * 0.4, z + (Math.random() - 0.5) * 1.6, { collide: false, rough: 0.5 });
+  b.box(2.4, 0.5, 2.4, 0xd5352b, x, 4.0, z, { collide: false, cast: false, emissive: 0xd5352b, emissiveI: 0.6 }); // top sign
+}
+function arcadeStool(b, x, z, color) { b.cyl(0.35, 0.7, color, x, 0.35, z, { collide: true, rough: 0.5, emissive: color, emissiveI: 0.15 }); }
+
+function buildArcade() {
+  const b = new Builder();
+  const r = rng(303);
+  const X = 24, Z = 20, WALL_H = 7;
+  const _anim = [];
+  // dark patterned floor (arcade carpet)
+  b.plane(X * 2, Z * 2, 0x1a1330, 0, 0, 0, { tex: TEX.carpet(0x1a1330), rep: 10, rough: 0.85 });
+  // glowing grid strips on the floor
+  for (let gx = -X + 4; gx < X; gx += 8) b.box(0.2, 0.04, Z * 2, 0x2f7fd8, gx, 0.03, 0, { collide: false, cast: false, emissive: 0x2f7fd8, emissiveI: 0.7 });
+  // dark walls
+  const wallC = 0x14101f;
+  b.box(X * 2, WALL_H, 0.6, wallC, 0, WALL_H / 2, -Z, { rough: 0.85 });
+  b.box(X * 2, WALL_H, 0.6, wallC, 0, WALL_H / 2, Z, { rough: 0.85 });
+  b.box(0.6, WALL_H, Z * 2, wallC, -X, WALL_H / 2, 0, { rough: 0.85 });
+  b.box(0.6, WALL_H, Z * 2, wallC, X, WALL_H / 2, 0, { rough: 0.85 });
+
+  // neon signs on the walls (animated flicker + glow)
+  _anim.push(neonSign(b, -8, 5.2, -19.6, 0, 6, 1.4, 0xff2d87));
+  _anim.push(neonSign(b, 8, 5.2, -19.6, 0, 5, 1.2, 0x2fd8c8));
+  _anim.push(neonSign(b, -19.6, 5.0, 0, Math.PI / 2, 7, 1.2, 0xffd23b));
+  _anim.push(neonSign(b, 19.6, 5.0, -4, -Math.PI / 2, 5, 1.2, 0x7a4fff));
+
+  // rows of colourful arcade cabinets (the main camo cover)
+  const cab = [0xe23b3b, 0x2f7fd8, 0xf2c33c, 0x4fbf5a, 0xf08a3d, 0x9b5bd0, 0xe87fb0, 0x36b3a8, 0xff2d87, 0x2fd8c8];
+  // back wall row (facing +z)
+  for (let i = 0; i < 7; i++) arcadeCabinet(b, -18 + i * 6, -17, 0, cab[i % cab.length]);
+  // a double island row in the middle (back to back)
+  for (let i = 0; i < 5; i++) { arcadeCabinet(b, -12 + i * 6, -3, 0, cab[(i + 3) % cab.length]); arcadeCabinet(b, -12 + i * 6, -1.5, Math.PI, cab[(i + 6) % cab.length]); }
+  // side wall row (facing -x)
+  for (let i = 0; i < 4; i++) arcadeCabinet(b, 18, -12 + i * 7, -Math.PI / 2, cab[(i + 2) % cab.length]);
+
+  // pinball machines
+  pinball(b, -16, 8, 0, 0xff2d87); pinball(b, -12, 8, 0, 0x2fd8c8); pinball(b, -8, 8, 0, 0xffd23b);
+  // claw / prize machine (landmark)
+  clawMachine(b, 12, 10);
+  // snack counter
+  b.box(6, 1.1, 1.4, 0x2a1f3a, 6, 0.55, 16, { rough: 0.5 });
+  b.box(6, 0.12, 1.4, 0x3a2f4a, 6, 1.12, 16, { collide: false, rough: 0.3 });
+  ['#e23b3b', '#f2c33c', '#4fbf5a'].forEach((c, i) => b.cyl(0.22, 0.5, parseInt(c.slice(1), 16), 4 + i * 1.5, 1.4, 16, { collide: false, cast: false, emissive: parseInt(c.slice(1), 16), emissiveI: 0.3 }));
+  // jukebox (glowing landmark)
+  b.box(1.8, 3, 1.2, 0x7a4fff, -20, 1.5, 14, { rough: 0.4, emissive: 0x7a4fff, emissiveI: 0.4 });
+  b.box(1.4, 1.2, 0.1, 0xffd23b, -19.4, 2.2, 14, { collide: false, cast: false, emissive: 0xffd23b, emissiveI: 0.8 });
+  // bean-bag / stool seating (colourful cover)
+  arcadeStool(b, 9, 12, 0xe23b3b); arcadeStool(b, 9, 8, 0x2f7fd8); arcadeStool(b, 14, 14, 0x4fbf5a);
+  b.sphere(1.0, 0xff8a3d, 16, 0.8, 4, { rough: 0.9 }); b.sphere(1.0, 0x2fd8c8, 14, 0.8, 1, { rough: 0.9 }); // bean bags
+
+  const spawns = [
+    new THREE.Vector3(-10, 0, 4), new THREE.Vector3(6, 0, 6), new THREE.Vector3(-2, 0, -10),
+    new THREE.Vector3(14, 0, -2), new THREE.Vector3(-15, 0, 12), new THREE.Vector3(2, 0, 12)
+  ];
+  return finalize(b, {
+    mood: 'arcade', bounds: { minX: -X + 1.5, maxX: X - 1.5, minZ: -Z + 1.5, maxZ: Z - 1.5 },
+    spawns, hunterSpawn: new THREE.Vector3(0, 0, 6), _anim,
+    apply(scene, renderer) {
+      scene.background = makeGradientTex(0x0a0814, 0x1c1430);
+      scene.fog = new THREE.FogExp2(0x120c20, 0.022);
+      const hemi = new THREE.HemisphereLight(0x6a5aff, 0x1a0f2a, 0.35); scene.add(hemi); this._lights.push(hemi);
+      const key = new THREE.DirectionalLight(0x8a7aff, 0.5); key.position.set(8, 18, 6); key.castShadow = true;
+      key.shadow.mapSize.set(renderer.shadowMap.enabled ? 2048 : 1024, 2048); key.shadow.camera.near = 1; key.shadow.camera.far = 70;
+      key.shadow.camera.left = -28; key.shadow.camera.right = 28; key.shadow.camera.top = 28; key.shadow.camera.bottom = -28; key.shadow.bias = -0.0004; key.shadow.normalBias = 0.03;
+      scene.add(key); scene.add(key.target); this._lights.push(key, key.target); this.sun = key;
+      // a couple of coloured fills for the neon mood
+      const f1 = new THREE.PointLight(0xff2d87, 8, 24, 2); f1.position.set(-8, 5, -12); scene.add(f1); this._lights.push(f1);
+      const f2 = new THREE.PointLight(0x2fd8c8, 8, 24, 2); f2.position.set(10, 5, 8); scene.add(f2); this._lights.push(f2);
+      const pmrem = new THREE.PMREMGenerator(renderer); this._env = pmrem.fromScene(new RoomEnvironment(), 0.04);
+      scene.environment = this._env.texture; pmrem.dispose();
+    },
+    update(dt, t) { this._anim.forEach((a) => a.update && a.update(dt, t)); }
+  });
+}
+
 // ---------- shared scene helpers ----------
 function makeGradientTex(top, bottom) {
   if (typeof document === 'undefined') return new THREE.Color(bottom);
@@ -679,6 +784,7 @@ function finalize(b, props) {
 
 export const MAPS = [
   { id: 'toyroom', name: "Andy's Room", mood: 'Toy Story bedroom', accent: '#f2c33c', build: buildToyRoom },
+  { id: 'arcade', name: 'Neon Arcade', mood: 'Retro arcade', accent: '#ff2d87', build: buildArcade },
   { id: 'mansion', name: 'The Mansion', mood: 'Cozy indoor', accent: '#c98f86', build: buildMansion },
   { id: 'garden', name: 'Sunset Garden', mood: 'Bright outdoor', accent: '#6cbf4a', build: buildGarden }
 ];
