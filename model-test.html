@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Test — Meccha Chameleon</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1620;overflow:hidden;font-family:system-ui,sans-serif;color:#fff}
+  #c{width:100%;height:100%;display:block}
+  .panel{position:fixed;top:12px;left:12px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.15);border-radius:12px;padding:14px 16px;max-width:340px;backdrop-filter:blur(4px)}
+  .panel h1{font-size:15px;margin:0 0 8px}
+  .panel p{font-size:12px;line-height:1.5;color:#cfcfe0;margin:6px 0}
+  .panel input[type=file]{font-size:12px;margin-top:6px}
+  .panel code{background:rgba(255,255,255,.1);padding:1px 5px;border-radius:4px}
+  #info{position:fixed;bottom:12px;left:12px;font-size:12px;color:#9fe0a0;background:rgba(0,0,0,.5);padding:8px 12px;border-radius:8px}
+  .drop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(67,192,216,.2);border:3px dashed #7ee08a;font-size:24px;font-weight:700}
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel">
+  <h1>glTF Model Viewer</h1>
+  <p>Loads <code>assets/models/Duck.glb</code> by default — proof the pipeline works.</p>
+  <p><b>Test your own:</b> pick a <code>.glb</code> / <code>.gltf</code> file (or drag it onto the page). Drag to orbit, scroll to zoom.</p>
+  <input id="file" type="file" accept=".glb,.gltf">
+</div>
+<div id="info">loading…</div>
+<div class="drop" id="drop">drop a .glb / .gltf here</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2a2433);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
+camera.position.set(2, 1.5, 3);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x554466, 1.0));
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
+sun.position.set(4, 8, 5); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0003;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(20, 48), new THREE.MeshStandardMaterial({ color: 0x3a3346, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+scene.add(new THREE.GridHelper(20, 20, 0x556, 0x334));
+
+const draco = new DRACOLoader().setDecoderPath('./vendor/draco/');
+const loader = new GLTFLoader().setDRACOLoader(draco);
+const info = document.getElementById('info');
+let current = null;
+
+function frame(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center); obj.position.y += size.y / 2;       // center + sit on ground
+  let tris = 0; obj.traverse((o) => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  camera.position.set(maxDim * 1.4, maxDim * 1.0, maxDim * 1.8);
+  controls.target.set(0, size.y / 2, 0); controls.update();
+  info.textContent = `OK · ${Math.round(tris).toLocaleString()} triangles · ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`;
+}
+function show(gltf) { if (current) scene.remove(current); current = gltf.scene; scene.add(current); frame(current); }
+
+function loadURL(url, label) {
+  info.textContent = 'loading ' + (label || url) + '…';
+  loader.load(url, show, undefined, (e) => { info.textContent = 'ERROR: ' + (e.message || 'could not load ' + url); info.style.color = '#ff8a8a'; });
+}
+loadURL('./assets/models/Duck.glb', 'Duck.glb');
+
+document.getElementById('file').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadURL(URL.createObjectURL(f), f.name); });
+const drop = document.getElementById('drop');
+addEventListener('dragover', (e) => { e.preventDefault(); drop.style.display = 'flex'; });
+drop.addEventListener('dragleave', () => drop.style.display = 'none');
+addEventListener('drop', (e) => { e.preventDefault(); drop.style.display = 'none'; const f = e.dataTransfer.files[0]; if (f) loadURL(URL.createObjectURL(f), f.name); });
+
+function resize() { const r = canvas.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+</script>
+</body>
+</html>
