@@ -146,7 +146,7 @@ import { EZModels } from './models3d.js';
     // The hunter becomes a real creature model when available (the player stays
     // procedural — its live colour-shift IS the camouflage mechanic). The model
     // is parented to the seeker group so it inherits its movement/turning.
-    EZModels.load(CREATURE, { size: 3.0, rotationY: Math.PI }).then(function (model) {
+    EZModels.load(CREATURE, { size: 3.0, rotationY: 0 }).then(function (model) {
       if (!model) return;
       seeker.bodyParts.forEach(function (p) { p.mat.visible = false; });
       seeker.add(model);
