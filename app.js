@@ -273,7 +273,7 @@
     // (apex, hideout); hue gives every tile its own colour.
     var games = [
       { name: 'APEX DRIFT', file: 'apexdrift.ez', author: '@you', plays: '18.2k', tag: '3D · RACER', genre: 'racing', game: 'apex', hue: 0 },
-      { name: 'MECCHA CHAMELEON', file: 'meccha.ez', author: '@you', plays: '21.6k', tag: '3D · BLEND & SEEK', genre: 'maze', game: 'hideout', hue: 110 },
+      { name: 'CHROMA HIDE', file: 'chromahide.ez', author: '@you', plays: '21.6k', tag: '3D · HIDE & SEEK', genre: 'maze', game: 'hideout', hue: 175 },
       { name: 'VOID RUNNER', file: 'voidrun.ez', author: '@toru', plays: '9.1k', tag: 'RUNNER', genre: 'runner', game: 'apex', hue: 205 },
       { name: 'ASTRO POP', file: 'astropop.ez', author: '@dev_k', plays: '6.2k', tag: 'SHOOTER', genre: 'shooter', game: 'hideout', hue: 40 },
       { name: 'BLOCK FALL', file: 'blockfall.ez', author: '@nori', plays: '5.5k', tag: 'PUZZLE', genre: 'blocks', game: 'hideout', hue: 268 },
@@ -340,8 +340,8 @@
   var GAME_META = {
     apex:    { name: 'Apex Drift',       tag: 'NEON RACER', download: './dist/apex-drift.html',
                hint: 'click the preview · ↑ accelerate · ← → steer' },
-    hideout: { name: 'Meccha Chameleon', tag: 'BLEND HIDE & SEEK', download: null,
-               hint: 'click · WASD move · E eyedrop colour · match the scene to vanish' }
+    hideout: { name: 'Chroma Hide', tag: '3D HIDE & SEEK', download: null,
+               hint: 'click · WASD move · SHIFT sneak · E blend · F hide/grab · drag to orbit camera' }
   };
 
   function applyGameMeta() {
